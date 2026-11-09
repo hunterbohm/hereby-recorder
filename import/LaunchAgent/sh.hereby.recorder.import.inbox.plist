@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>sh.hereby.recorder.import.inbox</string>
+<key>ProgramArguments</key><array>
+<string>__HOME__/Library/Application Support/LiveMeetingListener/bin/lml-import</string>
+<string>inbox</string><string>__INBOX__</string><string>--push</string><string>--quiet</string>
+</array>
+<key>WatchPaths</key><array><string>__INBOX__</string></array>
+<key>StartInterval</key><integer>900</integer>
+<key>ThrottleInterval</key><integer>30</integer>
+<key>RunAtLoad</key><true/>
+<key>ProcessType</key><string>Background</string>
+<key>StandardOutPath</key><string>__HOME__/Library/Logs/LiveMeetingListener/import-inbox.log</string>
+<key>StandardErrorPath</key><string>__HOME__/Library/Logs/LiveMeetingListener/import-inbox.err</string>
+<key>Umask</key><integer>63</integer>
+</dict></plist>

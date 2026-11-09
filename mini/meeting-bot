@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+# Hermes runs commands with the macOS Python 3.9 first on PATH, and this code needs 3.11 (tomllib).
+if sys.version_info < (3, 11) and not os.environ.get("MEETING_BOT_REEXEC"):
+    os.environ["MEETING_BOT_REEXEC"] = "1"
+    for python in ("/opt/homebrew/bin/python3", "/usr/local/bin/python3"):
+        if os.access(python, os.X_OK):
+            os.execv(python, [python, *sys.argv])
+if sys.version_info < (3, 11):
+    sys.exit("meeting-bot needs Python 3.11 or newer.")
+
+from meeting_bot import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

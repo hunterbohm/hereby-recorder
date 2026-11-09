@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import shlex
+import subprocess
+import sys
+
+import lml_settings
+from lml_common import (atomic_write, file_size, forgotten, locked, nonnegative_int, now_local, read_json,
+                        root_path, safe_key)
+from lml_hermes import meeting_lock
+
+ENDED = {'closed', 'failed', 'crashed'}
+# A command that exits inside this many seconds has its exit status judged. A longer one, like `hermes cron run`, which
+# executes its job inline, runs on detached so it does not hold the Mac's ssh call open.
+STARTUP_GRACE = 1.0
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('sid', type=safe_key)
+    parser.add_argument('transcript_bytes', type=nonnegative_int)
+    args = parser.parse_args()
+    root = root_path()
+    session = root / 'sessions' / args.sid
+    with meeting_lock(root, args.sid), locked(root / 'locks' / f'{args.sid}.done.lock'):
+        if forgotten(root, args.sid):
+            return 4
+        meta = read_json(session / 'meta.json', {})
+        if not isinstance(meta, dict) or meta.get('state') not in ENDED:
+            print('Session is missing or has not ended.', file=sys.stderr)
+            return 3
+        size = file_size(session / 'transcript.jsonl')
+        if size != args.transcript_bytes:
+            print(f'Transcript is {size} bytes, expected {args.transcript_bytes}.', file=sys.stderr)
+            return 3
+        if read_json(session / 'done.json', {}).get('transcript_bytes') == args.transcript_bytes:
+            return 0
+        try:
+            command = os.environ.get('LML_DONE_CMD') or lml_settings.load().done_command
+        except lml_settings.SettingsError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        try:
+            argv = [word.replace('{session}', str(session)) for word in shlex.split(command)]
+            with open(session / 'handoff.log', 'ab') as log:
+                os.fchmod(log.fileno(), 0o600)
+                process = subprocess.Popen(argv, start_new_session=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+        except (OSError, ValueError):
+            print('Could not start meeting processing.', file=sys.stderr)
+            return 1
+        try:
+            status = process.wait(STARTUP_GRACE)
+        except subprocess.TimeoutExpired:
+            status = 0
+        if status:
+            print(f'Meeting processing exited with status {status}.', file=sys.stderr)
+            return 1
+        atomic_write(session / 'done.json', {'at': now_local().isoformat(), 'transcript_bytes': args.transcript_bytes})
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

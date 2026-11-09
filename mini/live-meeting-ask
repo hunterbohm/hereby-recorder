@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+import sys
+
+import any_answer
+from live_answer import UNAVAILABLE, answer
+from lml_hermes import TimedOut
+
+
+def main():
+    question = sys.stdin.buffer.read().decode('utf-8', errors='replace').strip()
+    if not question:
+        print('Send the question on stdin.', file=sys.stderr)
+        return 2
+    try:
+        if sys.argv[1:] == ['--any']:
+            print(any_answer.answer(question), flush=True)
+        else:
+            answer(question, deliver=lambda text: print(text, flush=True))
+    except TimedOut:
+        print(any_answer.TIMED_OUT, file=sys.stderr)
+        return 1
+    except Exception:
+        print(UNAVAILABLE, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

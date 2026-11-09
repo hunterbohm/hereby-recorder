@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+import json
+import sys
+
+from lml_common import atomic_write, dt, now_local, read_json, root_path
+from lml_status import status
+
+STATES = ('idle', 'armed', 'recording', 'paused')
+FIELDS = ('at', 'app_version', 'state', 'sid', 'mic_ok', 'audio_ok')
+
+
+def heartbeat(data):
+    try:
+        value = json.loads(data)
+        dt(value['at'])
+    except (ValueError, TypeError, KeyError):
+        return None
+    valid = (isinstance(value['at'], str) and isinstance(value.get('app_version'), str)
+             and value.get('state') in STATES and 'sid' in value and (value['sid'] is None or isinstance(value['sid'], str))
+             and all(type(value.get(key)) is bool for key in ('mic_ok', 'audio_ok')))
+    return {key: value[key] for key in FIELDS} if valid else None
+
+
+def main():
+    beat = heartbeat(sys.stdin.buffer.read())
+    if beat is None:
+        print('Heartbeat is not JSON of the expected shape.', file=sys.stderr)
+        return 2
+    root, now = root_path(), now_local()
+    atomic_write(root / 'heartbeat.json', {**beat, 'received_at': now.isoformat(timespec='seconds')})
+    feed = status(root, now)
+    atomic_write(root / 'status.json', feed)
+    schedule = read_json(root / 'schedule.json', {})
+    print(json.dumps({'schedule': schedule if isinstance(schedule, dict) else {}, 'status': feed}, ensure_ascii=False))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

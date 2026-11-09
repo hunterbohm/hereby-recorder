@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>sh.hereby.recorder.import.phone</string>
+<key>ProgramArguments</key><array>
+<string>__HOME__/Library/Application Support/LiveMeetingListener/bin/lml-import</string>
+<string>phone</string><string>--since</string><string>__SINCE__</string><string>--push</string><string>--quiet</string>
+</array>
+<key>WatchPaths</key><array>
+<string>__HOME__/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite</string>
+<string>__HOME__/Library/Group Containers/group.com.apple.notes/NoteStore.sqlite-wal</string>
+</array>
+<key>StartInterval</key><integer>900</integer>
+<key>ThrottleInterval</key><integer>60</integer>
+<key>RunAtLoad</key><true/>
+<key>ProcessType</key><string>Background</string>
+<key>StandardOutPath</key><string>__HOME__/Library/Logs/LiveMeetingListener/import-phone.log</string>
+<key>StandardErrorPath</key><string>__HOME__/Library/Logs/LiveMeetingListener/import-phone.err</string>
+<key>Umask</key><integer>63</integer>
+</dict></plist>

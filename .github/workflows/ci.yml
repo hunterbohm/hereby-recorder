@@ -1,0 +1,91 @@
+# Standard CI (land-pr's ci-template). Branch protection, where the plan allows it, requires
+# ci-ok (this file's summary job) and sol-review (posted by review-pr on AGREE).
+#
+# Runner: the repo variable CI_RUNS_ON names the shared self-hosted runner, a fresh Linux VM
+# (homelab fleet/ci-dispatch). GitHub-hosted runners refuse jobs on private repos (billing), so
+# ubuntu-latest is only the fallback for forks and for a copy of this repo without the variable.
+# The Swift tests (Mac app and iPhone importer) and the build script's tests need macOS (AppKit, ScreenCaptureKit,
+# plutil), so the mac job runs them on the self-hosted Mac named by the repo variable
+# MAC_RUNS_ON (a runner on the Mac mini registered to this repo only). Fork PRs never reach it:
+# the job skips them here, and since a fork can edit this file, the runner's own job-started hook
+# (guard-forks.sh in its folder on the mini, outside this repo) refuses any fork PR job too.
+# Checkout cleans the workspace, ignored build files included, so every run builds fresh.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changes:
+    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 5
+    outputs:
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        id: filter
+        with:
+          # A file counts as code unless it is documentation.
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE*'
+
+  mini:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+      - name: Mini tests
+        run: sh mini/run_tests.sh
+
+  mac:
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && !github.event.pull_request.head.repo.fork && vars.MAC_RUNS_ON != ''
+    runs-on: ${{ fromJSON(vars.MAC_RUNS_ON || '"macos-latest"') }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The Mac mini runs other work too, so tests yield to it.
+      - name: Mac app tests
+        env:
+          # Outside the checkout, so checkout's clean keeps it: SwiftPM verifies each download's checksum, and a
+          # GitHub download outage no longer fails every run.
+          SWIFTPM_CACHE_DIR: ${{ runner.tool_cache }}/hereby-swiftpm
+        run: nice -n 10 mac/scripts/test.sh
+      - name: iPhone importer tests
+        run: nice -n 10 import/scripts/test.sh
+      - name: Build script tests
+        run: nice -n 10 sh mini/run_tests.sh mini/tests/test_build_app.py
+
+  ci-ok:
+    if: always()
+    needs: [changes, mini, mac]
+    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    timeout-minutes: 2
+    steps:
+      # Passes when every job passed or was skipped by its filter; fails on failure or cancel.
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in success|skipped) ;; *) exit 1 ;; esac
+          done

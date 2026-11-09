@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>sh.hereby.recorder</string>
+<key>RunAtLoad</key><true/>
+<key>KeepAlive</key><true/>
+<key>ProcessType</key><string>Interactive</string>
+<key>ProgramArguments</key><array><string>__HOME__/Applications/LiveMeetingListener.app/Contents/MacOS/lml</string><string>run</string></array>
+<key>StandardOutPath</key><string>__HOME__/Library/Logs/LiveMeetingListener/stdout.log</string>
+<key>StandardErrorPath</key><string>__HOME__/Library/Logs/LiveMeetingListener/stderr.log</string>
+<key>Umask</key><integer>63</integer>
+</dict></plist>

@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+import argparse
+import sys
+
+from lml_common import root_path
+from lml_hermes import forget
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('sid')
+    args = parser.parse_args()
+    try:
+        remaining, waiting = forget(root_path(), args.sid)
+        if waiting:
+            print('Forget incomplete. Meeting lock timed out or local files remain.', file=sys.stderr)
+        if remaining or waiting:
+            print('Forget incomplete. Remaining ids: ' + ', '.join(sorted(remaining)), file=sys.stderr)
+            return 1
+        return 0
+    except Exception:
+        print('Forget failed. Retry required.', file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

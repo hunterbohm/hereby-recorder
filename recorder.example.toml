@@ -1,0 +1,52 @@
+# Hereby Recorder settings. The Mac and the mini each read ~/.config/hereby/recorder.toml, or
+# $XDG_CONFIG_HOME/hereby/recorder.toml when that is set. Every key is optional. Restart the recorder after a change.
+
+# The mini's ssh host, as `ssh <host>` reaches it. Without it, meetings stay on the Mac.
+ssh_host = "studio"
+# The folder the mini keeps sessions in.
+storage_root = "~/.local/state/live-meeting"
+# The name the meeting prompts use for you.
+user_name = "Sam"
+# Your own calendar addresses. They are left out of each meeting's count of other voices.
+emails = ["sam@example.com", "sam.lee@example.org"]
+# The Google accounts the calendar schedule reads. They also count as your own addresses. Without it, the calendar
+# collector reads its own accounts.
+calendars = ["sam@example.com", "sam.lee@example.org"]
+# Invitees at these domains are on your side, so meeting briefs leave them out of the people you meet.
+domains = ["example.com"]
+# The Obsidian vault the mini reads meeting notes from.
+vault = "~/Notes"
+# The calendar collector and the project map the mini's meeting briefs read.
+calendar_collector = "~/tools/calendar/collect.py"
+project_map = "~/Notes/projects.tsv"
+# Bundle id prefixes of the apps whose calls are recorded.
+meeting_apps = [
+    "us.zoom",
+    "com.google.Chrome",
+    "com.apple.FaceTime",
+]
+# Bundle id prefixes of apps that count only while they hold the microphone, like a notetaker's helper.
+mic_apps = ["com.granola.app.helper"]
+# Microphone name fragments, most wanted first.
+mic_order = ["Shure", "AirPods", "MacBook Pro Microphone"]
+# Days a finished meeting is kept on the Mac and the mini.
+retention_days = 14
+# What runs when a meeting has ended: on the Mac when meetings stay on it, on the mini when ssh_host is set. A {session}
+# word becomes the meeting's folder. Without it, handoff/hereby-handoff.sh {session} prints the transcript path for your
+# agent. See handoff/README.md.
+done_command = "my-agent file-meeting {session}"
+
+# The call overlay's shortcuts, written like "option+return" or "control+option+return"; "off" turns one off.
+# Change one when another app already uses it, like a tiling window manager's terminal key.
+overlay_toggle_key = "option+\\"
+overlay_say_key = "option+return"
+# Runs each time the overlay shows, hides or changes style. It gets HEREBY_OVERLAY (strip, card, pill or off),
+# HEREBY_OVERLAY_WIDTH (the points the side strip takes from the right edge, 0 for the others) and
+# HEREBY_OVERLAY_DISPLAY (the screen's display UUID). A tiling window manager uses it to keep windows beside the
+# strip instead of under it. The recorder runs it with the login PATH, so name the tool by its full path. With HyprMac:
+overlay_command = "~/.local/bin/hyprctl dispatch reserve right $HEREBY_OVERLAY_WIDTH $HEREBY_OVERLAY_DISPLAY"
+
+# Sends a picture of the screen under the pointer with every live question, so answers can use what is on it, like a
+# shared slide or a doc. The overlay is left out of the picture. Needs Screen Recording for LiveMeetingListener. The
+# Read screen button sends one even when this is false.
+screen_context = true

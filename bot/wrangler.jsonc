@@ -1,0 +1,21 @@
+{
+  "name": "hermes-meet-bot",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "containers": [
+    {
+      "class_name": "MeetBot",
+      "image": "./container/Dockerfile",
+      "instance_type": "standard-2",
+      "max_instances": 3,
+      // A deploy leaves bots started in the last 4 hours (the longest call) alone, so it never cuts a call.
+      "rollout_active_grace_period": 14400
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "MEET_BOT", "class_name": "MeetBot" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MeetBot"] }],
+  "observability": { "enabled": true }
+}

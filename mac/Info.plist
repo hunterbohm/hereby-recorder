@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>sh.hereby.recorder</string>
+<key>CFBundleName</key><string>LiveMeetingListener</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleExecutable</key><string>lml</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSMinimumSystemVersion</key><string>26.0</string>
+<key>LSUIElement</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>Transcribe your voice during meetings while another meeting app uses the microphone.</string>
+<key>NSAudioCaptureUsageDescription</key><string>Transcribe meeting audio on this Mac.</string>
+<key>NSScreenCaptureUsageDescription</key><string>Capture meeting audio with the optional ScreenCaptureKit backend. Screen frames are discarded.</string>
+</dict></plist>

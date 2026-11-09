@@ -1,0 +1,13 @@
+.build/
+*.wav
+*.opus
+*.parquet
+bench/data/
+bench/models/
+.swiftpm/
+__pycache__/
+.uv-cache/
+.uv-python/
+.test-tmp/
+.pytest_cache/
+.test-deps/

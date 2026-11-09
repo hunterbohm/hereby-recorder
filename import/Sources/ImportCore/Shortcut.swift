@@ -1,0 +1,1 @@
+../../../mac/Sources/LMLCore/Shortcut.swift

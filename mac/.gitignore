@@ -1,0 +1,8 @@
+.build/
+.cache/
+.config/
+.security/
+.tmp/
+.build-*/
+/*.log
+evidence/

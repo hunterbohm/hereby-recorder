@@ -1,0 +1,17 @@
+them|Hi Sam, thanks for making time. Priya from Meridian Logistics is joining in a minute.
+me|No problem, Kim. While we wait, did you get the proposal I sent on Monday?
+them|I did. The number I have is forty two thousand five hundred for phase one. Is that still right?
+me|That's right, forty two five for phase one, and phase two is eighteen thousand, billed monthly.
+them|Okay. Our board meets on November twelfth, so we need a signed statement of work by the ninth.
+me|I can get the statement of work to you by Friday the sixteenth.
+them|Great. Last time you mentioned the dashboard would pull from Snowflake and HubSpot. Is HubSpot still in scope?
+me|Yes, HubSpot and Snowflake are both in scope. Salesforce is a phase two item.
+them|Priya asked about the migration. She thought we agreed on a three week cutover, not six.
+me|I'll double check, but my notes say six weeks, starting December first.
+them|Fine. Can you also send the security questionnaire to Marcus Chen at meridian dot com?
+me|Sure, I will send it to Marcus by Wednesday.
+them|One more thing. The retainer was fifteen percent off if we commit for twelve months, right?
+me|Ten percent for twelve months, fifteen percent for twenty four months.
+them|Got it. Let's plan a follow up call next Tuesday at two thirty Central.
+me|Works for me. I'll send the invite and the updated pricing sheet today.
+them|Perfect. Talk soon, Sam.

@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+
+from lml_common import atomic_write, file_size, forgotten, locked, nonnegative_int, private_dir, root_path, safe_key
+from lml_hermes import meeting_lock
+
+
+def append(path, offset, data):
+    size = file_size(path)
+    if size < offset:
+        return 3, size
+    private_dir(path.parent)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    with os.fdopen(fd, 'ab') as stream:
+        stream.truncate(offset)
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return 0, offset + len(data)
+
+
+def replace(path, offset, data):
+    atomic_write(path, data)
+    return 0, len(data)
+
+
+MODES = {'transcript.jsonl': append, 'marks.jsonl': append, 'meta.json': replace, 'live.json': replace,
+         'speakers.json': replace}
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('sid', type=safe_key)
+    parser.add_argument('file', choices=MODES)
+    parser.add_argument('offset', type=nonnegative_int)
+    args = parser.parse_args()
+    write = MODES[args.file]
+    if write is replace and args.offset:
+        parser.error(args.file + ' is replaced whole, so offset must be 0')
+    data = sys.stdin.buffer.read()
+    root = private_dir(root_path())
+    # A concurrent forget either waits for this write and deletes it, or this sees its tombstone.
+    with meeting_lock(root, args.sid):
+        if forgotten(root, args.sid):
+            return 4
+        private_dir(root / 'sessions')
+        with locked(root / 'locks' / f'{args.sid}.{args.file}.lock'):
+            code, size = write(root / 'sessions' / args.sid / args.file, args.offset, data)
+    print(json.dumps({'size': size}))
+    return code
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
