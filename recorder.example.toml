@@ -17,6 +17,9 @@ calendars = ["sam@example.com", "sam.lee@example.org"]
 domains = ["example.com"]
 # The Obsidian vault the mini reads meeting notes from.
 vault = "~/Notes"
+# The folder of filed meeting notes, named like "2026-10-06 1000 Weekly Sync.md", that Ask any meeting reads. Without
+# it, Ask any meeting reads "06 - Contacts/Meetings" in the vault.
+meeting_notes = "~/Notes/Meetings"
 # The calendar collector and the project map the mini's meeting briefs read.
 calendar_collector = "~/tools/calendar/collect.py"
 project_map = "~/Notes/projects.tsv"

@@ -26,6 +26,7 @@ def test_a_missing_file_gives_the_defaults(tmp_path):
     assert settings.ssh_host is None and settings.emails == frozenset() and settings.meeting_apps == MEETING_APPS
     assert (settings.user_name, settings.retention_days, settings.mic_order) == ('the user', 14, ())
     assert settings.done_command == lml_settings.DONE_COMMAND and settings.agent_command is None
+    assert settings.meeting_notes is None
 
 
 def test_the_file_lives_under_xdg_config_home_or_dot_config(tmp_path):
@@ -41,6 +42,7 @@ user_name = "Sam"
 emails = ["Sam@Example.com"]
 domains = ["Example.com"]
 vault = "~/Notes"
+meeting_notes = "~/Notes/Meetings"
 meeting_apps = ["us.zoom"]
 mic_order = ["Shure", "AirPods"]
 retention_days = 30
@@ -51,6 +53,7 @@ project_map = "~/Notes/projects.tsv"
 '''))
     assert (settings.ssh_host, settings.user_name, settings.retention_days) == ('studio', 'Sam', 30)
     assert settings.storage_root == Path.home() / 'state' and settings.vault == Path.home() / 'Notes'
+    assert settings.meeting_notes == Path.home() / 'Notes/Meetings'
     assert settings.emails == {'sam@example.com'} and settings.domains == {'example.com'}
     assert settings.meeting_apps == ('us.zoom',) and settings.mic_order == ('Shure', 'AirPods')
     assert settings.done_command == 'run-it now' and settings.agent_command == 'codex exec'

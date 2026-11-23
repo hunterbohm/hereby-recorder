@@ -79,7 +79,7 @@ public struct Settings: Sendable, Equatable {
     static let fields: [String: Kind] = [
         "ssh_host": .host, "storage_root": .root, "user_name": .text, "emails": .list, "calendars": .list, "domains": .list, "vault": .text,
         "meeting_apps": .list, "mic_apps": .list, "mic_order": .list, "retention_days": .days, "done_command": .text,
-        "agent_command": .text, "calendar_collector": .text, "project_map": .text,
+        "agent_command": .text, "meeting_notes": .text, "calendar_collector": .text, "project_map": .text,
         "overlay_toggle_key": .shortcut, "overlay_say_key": .shortcut, "overlay_command": .text,
         "screen_context": .flag
     ]

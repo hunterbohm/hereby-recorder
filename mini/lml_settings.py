@@ -47,6 +47,7 @@ FIELDS = {
     'calendars': (_addresses, 'must be a list of email addresses'),
     'domains': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
     'vault': (_text, 'must be a string'),
+    'meeting_notes': (_text, 'must be a string'),
     'meeting_apps': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
     'mic_apps': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
     'mic_order': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
@@ -75,6 +76,8 @@ class Settings:
     # The Google accounts the schedule reads. Empty leaves the collector on its own accounts. Counted among `emails`.
     calendars: tuple = ()
     vault: Path = Path.home() / 'vault'
+    # Ask any meeting's notes folder in place of the vault's meetings folder.
+    meeting_notes: Path | None = None
     meeting_apps: tuple = MEETING_APPS
     mic_apps: tuple = MIC_APPS
     mic_order: tuple = ()
@@ -111,7 +114,7 @@ def load(file=None):
         if check is None or not check(value):
             raise SettingsError(file, key, problem)
     paths = {key: Path(values[key]).expanduser()
-             for key in ('storage_root', 'vault', 'calendar_collector', 'project_map') if key in values}
+             for key in ('storage_root', 'vault', 'meeting_notes', 'calendar_collector', 'project_map') if key in values}
     lists = {key: tuple(values[key]) for key in ('meeting_apps', 'mic_apps', 'mic_order') if key in values}
     folded = {key: frozenset(item.casefold() for item in values[key]) for key in ('emails', 'domains') if key in values}
     calendars = _fold(values.get('calendars', ()))

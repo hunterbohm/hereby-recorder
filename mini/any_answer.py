@@ -94,9 +94,9 @@ def _read(path):
         return ''
 
 
-def meetings(vault, today):
+def meetings(folder, today):
     """Filed meeting notes on or before today that hold anything beyond empty template headings."""
-    for path in sorted((Path(vault) / MEETINGS).glob('*.md')):
+    for path in sorted(Path(folder).glob('*.md')):
         day = path.name[:10]
         if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day) or day > today:
             continue
@@ -157,11 +157,12 @@ def answer(question, *, root=None, vault=None, now=None, runner=None, hermes_run
     """
     start, now = clock(), now or now_local()
     root = Path(root or root_path())
-    vault = Path(vault or os.environ.get('MEETING_VAULT') or lml_settings.load().vault).expanduser()
+    settings = lml_settings.load()
+    vault = Path(vault or os.environ.get('MEETING_VAULT') or settings.vault).expanduser()
     wanted, named = terms(question), days(question, now.date())
     if not wanted and not named:
         return NOT_FOUND
-    found = ranked(meetings(vault, now.date().isoformat()), wanted, named)
+    found = ranked(meetings(settings.meeting_notes or vault / MEETINGS, now.date().isoformat()), wanted, named)
     notes = [evidence(meeting, wanted) for meeting in found]
     records = knowledge(wanted, kb_runner, KB_S)
     if not notes and not records:

@@ -39,6 +39,7 @@ struct SettingsFileTests {
     }
     @Test func theMiniSideKeysAreAcceptedForTheHelpersToRead() throws {
         #expect(try Settings(toml: "agent_command = 'claude -p --no-session-persistence --tools \"\"'\n") == Settings())
+        #expect(try Settings(toml: "meeting_notes = \"~/Notes/Meetings\"\n") == Settings())
     }
     @Test func screenContextIsOnUnlessTurnedOffAndMustBeTrueOrFalse() throws {
         #expect(Settings().screenContext)
@@ -72,6 +73,7 @@ struct SettingsFileTests {
         ("emails = [\"a@example.com\", 3]", "emails", "must be a list of strings"),
         ("user_name = \"  \"", "user_name", "must be a string"),
         ("agent_command = [\"claude\"]", "agent_command", "must be a string"),
+        ("meeting_notes = 3", "meeting_notes", "must be a string"),
         ("retention_day = 14", "retention_day", "is not a setting"),
         ("retention_days = 7\nretention_days = 8", "retention_days", "is set twice"),
     ])
