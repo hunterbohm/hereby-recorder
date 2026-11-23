@@ -2,6 +2,7 @@
 """Fast answers about the live call, streamed as JSON lines: {"d": text} per piece, then {"done": true}.
 
 The model is called directly, like the nudge screen, so nothing is kept in a Hermes session.
+With agent_command set, that command answers instead, in one piece, and only Read screen calls the model directly.
 On failure it prints {"error": reason} and exits 1, and the Mac falls back to the Hermes answer.
 """
 import base64
@@ -17,7 +18,7 @@ from pathlib import Path
 import lml_screen
 from live_answer import NO_MEETING, context, instructions
 from lml_common import dt, forgotten, now_local, root_path, select_session
-from lml_hermes import meeting_lock
+from lml_hermes import CallFailed, TimedOut, agent_command, ask_agent, meeting_lock
 
 DEADLINE_S = 20
 MAC_LINES = 40
@@ -186,7 +187,34 @@ def stream(text, emit, *, image=None, deadline_s=DEADLINE_S, opener=urllib.reque
         raise QuickFailed('cut_off')
 
 
-def answer(request, emit, *, root=None, now=None, streamer=stream):
+def screen_stream(text, emit, *, image=None):
+    try:
+        stream(text, emit, image=image)
+    except QuickFailed as failure:
+        # agent_command takes no picture, so Read screen still needs the API's credential.
+        raise QuickFailed('screen_needs_api' if str(failure) == 'credential' else str(failure)) from None
+
+
+def agent_stream(argv, lockfd):
+    """`agent_command`'s whole answer as one piece. It reads text only, so a screenshot stays behind."""
+    def streamer(text, emit, *, image=None):
+        try:
+            emit(ask_agent(argv, text, DEADLINE_S, lockfd))
+        except TimedOut:
+            raise QuickFailed('timeout') from None
+        except CallFailed:
+            raise QuickFailed('agent') from None
+    return streamer
+
+
+def default_streamer(request, lockfd):
+    argv = agent_command()
+    if argv is None:
+        return stream
+    return screen_stream if request.get('kind') == 'screen' else agent_stream(argv, lockfd)
+
+
+def answer(request, emit, *, root=None, now=None, streamer=None):
     root, now = Path(root or root_path()), now or now_local()
     image = screen(request)
     if request.get('kind') == 'screen' and image is None:
@@ -194,23 +222,23 @@ def answer(request, emit, *, root=None, now=None, streamer=stream):
     session = select_session(root, now, recent=True, allow_test=True)
     sid = request.get('sid')
     if sid is not None and (session is None or session.sid != sid):
-        with meeting_lock(root, str(sid)):
+        with meeting_lock(root, str(sid)) as lockfd:
             if forgotten(root, str(sid)):
                 raise QuickFailed('forgotten')
             text = unsynced_prompt(now, request, image)
             if text is None:
                 emit(NO_MEETING)
                 return
-            streamer(text, emit, image=image)
+            (streamer or default_streamer(request, lockfd))(text, emit, image=image)
         return
     if not session:
         emit(NO_MEETING)
         return
     # The shared lock holds a forget until this answer ends, as it does for a Hermes answer.
-    with meeting_lock(root, session.sid):
+    with meeting_lock(root, session.sid) as lockfd:
         if forgotten(root, session.sid):
             raise QuickFailed('forgotten')
-        streamer(prompt(root, session, now, request), emit, image=image)
+        (streamer or default_streamer(request, lockfd))(prompt(root, session, now, request), emit, image=image)
 
 
 def main():

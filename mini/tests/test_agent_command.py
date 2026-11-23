@@ -7,7 +7,9 @@ import pytest
 
 import any_answer
 import live_answer
+import live_quick
 import lml_hermes
+import lml_screen
 from conftest import make_session
 from lml_common import append_jsonl, now_local
 
@@ -128,3 +130,44 @@ def test_forget_deletes_only_chats_mapped_before_the_agent(agent, root):
     append_jsonl(root / 'hermes_map' / (sid + '.jsonl'), {'id': 'old-chat'})
     assert lml_hermes.forget(root, sid, runner=hermes) == (set(), False)
     assert calls == [['hermes', 'sessions', 'delete', 'old-chat', '--yes']]
+
+
+def test_live_buttons_get_the_agents_whole_answer_as_one_piece(agent, root, now):
+    said = []
+    live_quick.answer({'kind': 'recap', 'screen': None}, said.append, root=root, now=now)
+    assert said == ['Plain answer: True']
+    assert live_quick.KINDS['recap'] in (agent / 'seen.txt').read_text()
+
+
+@pytest.mark.parametrize('name, reason', [('fail', 'agent'), ('empty', 'agent'), ('slow', 'timeout')])
+def test_a_failed_agent_is_a_quick_failure(agent, root, now, monkeypatch, name, reason):
+    mode(monkeypatch, name)
+    monkeypatch.setattr(live_quick, 'DEADLINE_S', 1)
+    with pytest.raises(live_quick.QuickFailed, match=reason):
+        live_quick.answer({'kind': 'say'}, lambda text: None, root=root, now=now)
+    if name == 'slow':
+        assert gone(agent / 'agent.pid')
+
+
+def test_read_screen_without_an_api_credential_says_it_needs_the_api(agent, root, now, monkeypatch):
+    monkeypatch.setattr(lml_screen, 'SECRET_TOOL', agent / 'no-such-tool')
+    request = {'kind': 'screen', 'screen': live_quick.base64.b64encode(JPEG).decode()}
+    with pytest.raises(live_quick.QuickFailed, match='screen_needs_api'):
+        live_quick.answer(request, lambda text: None, root=root, now=now)
+    assert not (agent / 'seen.txt').exists()
+
+
+def test_read_screen_with_a_credential_still_streams_from_the_api(agent, root, now, monkeypatch):
+    sent = []
+    def stream(text, emit, *, image=None):
+        sent.append(image)
+        emit('From the API.')
+    monkeypatch.setattr(live_quick, 'stream', stream)
+    said = []
+    image = live_quick.base64.b64encode(JPEG).decode()
+    live_quick.answer({'kind': 'screen', 'screen': image}, said.append, root=root, now=now)
+    assert said == ['From the API.'] and sent == [image]
+
+
+# The smallest JPEG the screen check accepts: start marker, a 1x1 frame header, end marker.
+JPEG = b'\xff\xd8\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xd9'
