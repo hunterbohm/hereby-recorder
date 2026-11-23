@@ -45,7 +45,7 @@ struct AskTests {
     @Test func liveAskSendsTheRequestAsJSONAndReturnsTheJoinedAnswer() async throws {
         let stdout = Data(#"{"d": "Send the "}\#n{"d": "list."}\#n{"done": true}\#n"#.utf8)
         let runner = StubRunner([0], stdout: stdout)
-        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: Mini(host: "mini"), runner: runner)
+        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: .remote(Mini(host: "mini")), runner: runner)
         let lines = (0..<60).map { TranscriptLine(speaker: "them", text: "line \($0)", at: Date(timeIntervalSince1970: 1_800_000_000 + Double($0))) }
         let seen = Seen()
         let answer = try await actions.askLive(LiveAskRequest(kind: .say, question: "What should I say next?", sid: "20261013-190012-a3f1", lines: lines)) { seen.add($0) }
@@ -64,7 +64,7 @@ struct AskTests {
 
     @Test func liveAskFailsOnAnErrorLineANonzeroExitOrNoDone() async throws {
         for (status, stdout) in [(Int32(1), #"{"error": "api"}"#), (0, #"{"d": "half"}"#), (0, #"{"d": "x"}\#n{"error": "forgotten"}\#n{"done": true}"#)] {
-            let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: Mini(host: "mini"),
+            let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: .remote(Mini(host: "mini")),
                                          runner: StubRunner([status], stdout: Data((stdout + "\n").utf8)))
             await #expect(throws: RecorderError.self) { _ = try await actions.askLive(LiveAskRequest(kind: .ask, question: "q")) { _ in } }
         }
@@ -84,7 +84,7 @@ struct AskTests {
         let asked = Seen()
         for (context, kind, expected) in [(true, QuickAsk.ask, "IMG"), (false, .ask, nil), (false, .screen, "IMG")] as [(Bool, QuickAsk, String?)] {
             let runner = StubRunner([0], stdout: stdout)
-            let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: Mini(host: "mini"), runner: runner,
+            let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: .remote(Mini(host: "mini")), runner: runner,
                                          screenContext: context, grab: { ask in asked.add(String(ask)); return "IMG" })
             _ = try await actions.askLive(LiveAskRequest(kind: kind, question: "q")) { _ in }
             let input = try #require(await runner.recorded().first?.input)
@@ -95,7 +95,7 @@ struct AskTests {
 
     @Test func readScreenWithoutAPictureFailsBeforeTheMini() async throws {
         let runner = StubRunner([0])
-        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: Mini(host: "mini"), runner: runner,
+        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: .remote(Mini(host: "mini")), runner: runner,
                                      grab: { _ in nil })
         await #expect(throws: RecorderError(reply: "no_screen")) { _ = try await actions.askLive(LiveAskRequest(kind: .screen, question: "q")) { _ in } }
         #expect(await runner.recorded().isEmpty)
@@ -115,36 +115,81 @@ struct AskTests {
         #expect(data.prefix(3) == Data([0xFF, 0xD8, 0xFF]))
     }
 
-    @Test func liveAskWithoutAMiniIsAnError() async {
-        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: nil, runner: StubRunner([0]))
+    @Test func liveAskWithNoHelpersIsAnError() async {
+        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: nil, runner: StubRunner([0]))
         await #expect(throws: RecorderError(reply: "no_mini")) { _ = try await actions.askLive(LiveAskRequest(kind: .ask, question: "q")) { _ in } }
+    }
+
+    @Test func withLocalHelpersAskAndTheLiveButtonsRunPythonOnThisMacAgainstItsOwnRoot() async throws {
+        let scripts = URL(fileURLWithPath: "/Applications/LiveMeetingListener.app/Contents/Resources/mini"), root = URL(fileURLWithPath: "/tmp/lml-ask")
+        let runner = StubRunner([0, 0, 0], stdout: Data(#"{"d": "ok"}\#n{"done": true}\#n"#.utf8))
+        let actions = ControlActions(paths: SessionPaths(root: root), helpers: .local(scripts: scripts, root: root), runner: runner)
+        _ = try await actions.ask("When is the deadline?")
+        _ = try await actions.askAnyMeeting("What do I owe Dana?")
+        #expect(try await actions.askLive(LiveAskRequest(kind: .recap, question: "")) { _ in } == "ok")
+        let commands = await runner.recorded()
+        let prefix = ["PATH=\(MeetingHelpers.path())", "PYTHONDONTWRITEBYTECODE=1", "LML_ROOT=/tmp/lml-ask", "python3"]
+        #expect(commands.map(\.executable) == Array(repeating: "/usr/bin/env", count: 3))
+        #expect(commands.map(\.arguments) == [prefix + [scripts.path + "/live-meeting-ask"], prefix + [scripts.path + "/live-meeting-ask", "--any"],
+                                              prefix + [scripts.path + "/live-meeting-quick"]])
+        #expect(commands.map(\.timeout) == [ControlActions.askTimeout, ControlActions.askTimeout, ControlActions.liveAskTimeout])
+        #expect(commands[0].input == Data("When is the deadline?".utf8) && commands[1].input == Data("What do I owe Dana?".utf8))
+        #expect(try JSON.decoder().decode(LiveAskRequest.self, from: try #require(commands[2].input)).kind == .recap)
+    }
+
+    @Test func theLocalPathPutsUserAndHomebrewToolsBeforeTheSystemPython() {
+        #expect(MeetingHelpers.path(home: URL(fileURLWithPath: "/Users/sam")) == "/Users/sam/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin")
+    }
+
+    @Test func theHelpersAreTheMiniWhenThereIsOneElseTheScriptsBesideTheCheckoutOrInTheApp() throws {
+        let base = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lml-helpers-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        let checkout = base.appendingPathComponent("repo"), app = base.appendingPathComponent("Hereby.app/Contents")
+        for script in [checkout.appendingPathComponent("mini/live-meeting-ask"), app.appendingPathComponent("Resources/mini/live-meeting-ask")] {
+            try FileManager.default.createDirectory(at: script.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("#!/usr/bin/env python3\n".utf8).write(to: script)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        }
+        let paths = SessionPaths(root: base.appendingPathComponent("root"), test: true)
+        let built = checkout.appendingPathComponent("mac/.build/debug/lml"), bundled = app.appendingPathComponent("MacOS/lml")
+        let mini = try Settings(toml: "ssh_host = \"studio\"\n")
+        #expect(MeetingHelpers.resolve(mini, paths: paths, executable: bundled) == .remote(Mini(host: "studio")))
+        #expect(MeetingHelpers.resolve(Settings(), paths: paths, executable: built) == .local(scripts: checkout.appendingPathComponent("mini").resolvingSymlinksInPath(), root: paths.root))
+        #expect(MeetingHelpers.resolve(Settings(), paths: paths, executable: bundled) == .local(scripts: app.appendingPathComponent("Resources/mini").resolvingSymlinksInPath(), root: paths.root))
+        #expect(MeetingHelpers.resolve(Settings(), paths: paths, executable: base.appendingPathComponent("elsewhere/lml")) == nil)
+    }
+
+    @Test func theRemoteHelpersRunOverSshExactlyAsBefore() {
+        let paths = SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask"), test: true), mini = Mini(host: "studio")
+        #expect(MeetingHelpers.remote(mini).command(paths: paths, "live-meeting-ask", ["--any"], input: Data("q".utf8), timeout: 5)
+                == Outbox.remoteCommand(paths: paths, mini: mini, "live-meeting-ask", ["--any"], input: Data("q".utf8), timeout: 5))
     }
 
     @Test func askSendsTheQuestionOnStdinAndReturnsTheAnswer() async throws {
         let runner = StubRunner([0], stdout: Data("She said Friday.\n".utf8))
-        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: Mini(host: "mini"), runner: runner)
+        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: .remote(Mini(host: "mini")), runner: runner)
         #expect(try await actions.ask("When is the deadline?") == "She said Friday.")
         let command = try #require(await runner.recorded().first)
         #expect(command.arguments.suffix(2) == ["mini", "live-meeting-ask"])
         #expect(command.input == Data("When is the deadline?".utf8)); #expect(command.timeout == ControlActions.askTimeout)
-        let failing = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: Mini(host: "mini"), runner: StubRunner([1]))
+        let failing = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: .remote(Mini(host: "mini")), runner: StubRunner([1]))
         await #expect(throws: RecorderError.self) { _ = try await failing.ask("anything") }
     }
     @Test func askAnyMeetingAddsTheAnyFlagAndAMissingCommandIsAnError() async throws {
         let runner = StubRunner([0], stdout: Data("You promised Dana the SOP list.\n".utf8))
-        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: Mini(host: "mini"), runner: runner)
+        let actions = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: .remote(Mini(host: "mini")), runner: runner)
         #expect(try await actions.askAnyMeeting("What do I owe Dana?") == "You promised Dana the SOP list.")
         let command = try #require(await runner.recorded().first)
         #expect(command.arguments.suffix(3) == ["mini", "live-meeting-ask", "--any"])
         #expect(command.input == Data("What do I owe Dana?".utf8)); #expect(command.timeout == ControlActions.askTimeout)
-        let missing = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), mini: Mini(host: "mini"), runner: StubRunner([127]))
+        let missing = ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-ask")), helpers: .remote(Mini(host: "mini")), runner: StubRunner([127]))
         await #expect(throws: RecorderError(reply: "ask_failed status=127")) { _ = try await missing.askAnyMeeting("anything") }
     }
 }
 
 struct HermesCommandTests {
-    private func actions(_ runner: StubRunner, mini: Mini? = Mini(host: "mini")) -> ControlActions {
-        ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-hermes")), mini: mini, runner: runner)
+    private func actions(_ runner: StubRunner, helpers: MeetingHelpers? = .remote(Mini(host: "mini"))) -> ControlActions {
+        ControlActions(paths: SessionPaths(root: URL(fileURLWithPath: "/tmp/lml-hermes")), helpers: helpers, runner: runner)
     }
 
     @Test func optinOptoutAndChatRunMeetingBotOnTheMiniWithTheEventKey() async throws {
@@ -171,10 +216,15 @@ struct HermesCommandTests {
         #expect(ControlActions.shellQuoted("plain_key-1@x.com") == "plain_key-1@x.com")
     }
 
-    @Test func aNonzeroExitOrNoMiniIsAnError() async {
+    @Test func aNonzeroExitOrNoMiniIsAnErrorEvenWithLocalHelpers() async {
         await #expect(throws: RecorderError(reply: "hermes_optin_failed status=1")) { try await actions(StubRunner([1])).hermesOptIn(key: "k") }
         await #expect(throws: RecorderError(reply: "hermes_chat_failed status=127")) { try await actions(StubRunner([127])).hermesChat(key: "k", on: true) }
-        await #expect(throws: RecorderError(reply: "no_mini")) { try await actions(StubRunner([0]), mini: nil).hermesOptOut(key: "k") }
+        await #expect(throws: RecorderError(reply: "no_mini")) { try await actions(StubRunner([0]), helpers: nil).hermesOptOut(key: "k") }
+        let runner = StubRunner([0]), root = URL(fileURLWithPath: "/tmp/lml-hermes")
+        let local = actions(runner, helpers: .local(scripts: URL(fileURLWithPath: "/tmp/mini"), root: root))
+        await #expect(throws: RecorderError(reply: "no_mini")) { try await local.hermesOptIn(key: "k") }
+        await #expect(throws: RecorderError(reply: "no_mini")) { try await local.hermesChat(key: "k", on: true) }
+        #expect(await runner.recorded().isEmpty)
     }
 }
 
@@ -199,7 +249,7 @@ struct ControlActionTests {
     @Test func panelActionsTravelOverTheControlSocket() async throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let server = try ControlServer(root: root)
-        let actions = ControlActions(paths: SessionPaths(root: root), mini: Mini(host: "mini"))
+        let actions = ControlActions(paths: SessionPaths(root: root), helpers: .remote(Mini(host: "mini")))
         let served = serve(server, replies: ["pause", "start", "mark", "not_recording", "forgotten"])
         try await actions.pause()
         try await actions.startInPerson()

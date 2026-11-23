@@ -46,11 +46,15 @@ def box(tmp_path):
     package = tmp_path / 'pkg'
     (package / 'mac' / 'scripts').mkdir(parents=True)
     (package / 'handoff').mkdir()
+    (package / 'mini').mkdir()
     shutil.copy(REPO / 'mac' / 'scripts' / 'build-app.sh', package / 'mac' / 'scripts' / 'build-app.sh')
     shutil.copy(REPO / 'mac' / 'Info.plist', package / 'mac' / 'Info.plist')
     shutil.copy(REPO / 'mac' / 'AppIcon.icns', package / 'mac' / 'AppIcon.icns')
     (package / 'mac' / 'scripts' / 'sign.sh').write_text('#!/bin/sh\nexit 0\n')
     (package / 'handoff' / 'hereby-handoff.sh').write_text('#!/bin/sh\nexit 0\n')
+    for name in ('live-meeting-ask', 'live-meeting-quick', 'live_quick.py'):
+        (package / 'mini' / name).write_text('#!/bin/sh\nexit 0\n')
+        (package / 'mini' / name).chmod(0o755)
     for script in (package / 'mac' / 'scripts').iterdir():
         script.chmod(0o755)
     git = ['git', '-c', 'user.name=t', '-c', 'user.email=t@example.test']
@@ -134,6 +138,14 @@ def test_the_new_label_build_behaves_as_before(box):
     assert [line.endswith(NEW_LABEL) for line in verbs(box, 'bootout')] == [True]
     assert any(NEW_LABEL + '.plist' in line for line in verbs(box, 'bootstrap'))
     assert not any(LEGACY_LABEL in line for line in verbs(box, 'bootstrap'))
+
+
+def test_the_app_carries_the_helpers_ask_runs_without_a_mini(box):
+    result = build(box)
+    assert result.returncode == 0, result.stderr
+    helpers = box / 'Apps' / 'LiveMeetingListener.app' / 'Contents' / 'Resources' / 'mini'
+    assert sorted(path.name for path in helpers.iterdir()) == ['live-meeting-ask', 'live-meeting-quick', 'live_quick.py']
+    assert os.access(helpers / 'live-meeting-ask', os.X_OK)
 
 
 def test_the_new_label_build_refuses_while_a_session_is_active(box):

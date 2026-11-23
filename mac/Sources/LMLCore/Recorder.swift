@@ -44,21 +44,21 @@ public struct RecorderError: Error, Equatable, Sendable {
     public init(reply: String) { self.reply = reply }
 }
 
-/// Panel actions over the recorder's control socket; Ask goes to the mini (PLAN.md contract C5).
+/// Panel actions over the recorder's control socket; Ask goes to the meeting helpers (PLAN.md contract C5).
 public struct ControlActions: RecorderActions {
     public static let askTimeout: TimeInterval = 120
     public static let liveAskTimeout: TimeInterval = 30
     public static let liveLines = 40
     public static let hermesTimeout: TimeInterval = 20
     private let paths: SessionPaths
-    private let mini: Mini?
+    private let helpers: MeetingHelpers?
     private let runner: any ProcessRunner
     private let screenContext: Bool
     private let grab: @Sendable (_ ask: Bool) async -> String?
     /// `screenContext` sends the screen with every live question; Read screen always sends it.
-    public init(paths: SessionPaths, mini: Mini?, runner: any ProcessRunner = LocalProcessRunner(), screenContext: Bool = false,
+    public init(paths: SessionPaths, helpers: MeetingHelpers?, runner: any ProcessRunner = LocalProcessRunner(), screenContext: Bool = false,
                 grab: @escaping @Sendable (_ ask: Bool) async -> String? = { await ScreenGrab.jpegBase64(ask: $0) }) {
-        self.paths = paths; self.mini = mini; self.runner = runner; self.screenContext = screenContext; self.grab = grab
+        self.paths = paths; self.helpers = helpers; self.runner = runner; self.screenContext = screenContext; self.grab = grab
     }
     private func send(_ command: ControlCommand, expect: String) async throws {
         let reply = try await ControlClient.request(command, root: paths.root)
@@ -76,13 +76,13 @@ public struct ControlActions: RecorderActions {
     public func ask(_ question: String) async throws -> String { try await ask(question, arguments: []) }
     public func askAnyMeeting(_ question: String) async throws -> String { try await ask(question, arguments: ["--any"]) }
     public func askLive(_ request: LiveAskRequest, onText: @escaping @Sendable (String) -> Void) async throws -> String {
-        guard let mini else { throw RecorderError(reply: "no_mini") }
+        guard let helpers else { throw RecorderError(reply: "no_mini") }
         var trimmed = request
         trimmed.lines = Array(request.lines.suffix(Self.liveLines))
         if request.kind == .screen || screenContext { trimmed.screen = await grab(request.kind == .screen) }
         if request.kind == .screen, trimmed.screen == nil { throw RecorderError(reply: "no_screen") }
         let input = try JSON.encoder().encode(trimmed)
-        let command = Outbox.remoteCommand(paths: paths, mini: mini, "live-meeting-quick", [], input: input, timeout: Self.liveAskTimeout)
+        let command = helpers.command(paths: paths, "live-meeting-quick", [], input: input, timeout: Self.liveAskTimeout)
         let reader = LiveAnswerReader()
         let output = try await runner.stream(command) { piece in
             if let text = reader.feed(piece) { onText(text) }
@@ -94,9 +94,10 @@ public struct ControlActions: RecorderActions {
     public func hermesChat(key: String, on: Bool) async throws {
         try await meetingBot(["chat", key, on ? "on" : "off"], reply: "hermes_chat_failed")
     }
-    /// `meeting-bot` on the mini prints one JSON object and exits 0, or exits nonzero with a reason on stderr.
+    /// `meeting-bot` on the mini prints one JSON object and exits 0, or exits nonzero with a reason on stderr. The
+    /// notetaker lives with Hermes on the mini, so it never runs locally.
     private func meetingBot(_ arguments: [String], reply: String) async throws {
-        guard let mini else { throw RecorderError(reply: "no_mini") }
+        guard case .remote(let mini) = helpers else { throw RecorderError(reply: "no_mini") }
         let command = Outbox.remoteCommand(paths: paths, mini: mini, "meeting-bot", arguments.map(Self.shellQuoted), timeout: Self.hermesTimeout)
         let output = try await runner.run(command)
         guard output.status == 0 else { throw RecorderError(reply: "\(reply) status=\(output.status)") }
@@ -108,8 +109,8 @@ public struct ControlActions: RecorderActions {
         return "'" + argument.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
     private func ask(_ question: String, arguments: [String]) async throws -> String {
-        guard let mini else { throw RecorderError(reply: "no_mini") }
-        let command = Outbox.remoteCommand(paths: paths, mini: mini, "live-meeting-ask", arguments, input: Data(question.utf8), timeout: Self.askTimeout)
+        guard let helpers else { throw RecorderError(reply: "no_mini") }
+        let command = helpers.command(paths: paths, "live-meeting-ask", arguments, input: Data(question.utf8), timeout: Self.askTimeout)
         let output = try await runner.run(command)
         guard output.status == 0 else { throw RecorderError(reply: "ask_failed status=\(output.status)") }
         return String(decoding: output.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)

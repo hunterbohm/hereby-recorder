@@ -122,7 +122,7 @@ struct SettingsUseTests {
         #expect(new.arguments.contains("ControlPath=\"\(root.path)/ssh-studio\""))
         #expect(after.shellRoot(test: true) == "/srv/meetings-test")
     }
-    @Test func withoutAMiniTheOutboxSendsNothingAndAskFails() async throws {
+    @Test func withoutAMiniTheOutboxSendsNothingAndAskRunsOnThisMac() async throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let paths = SessionPaths(root: root)
         let directory = paths.session("20261013-190012-a3f1")
@@ -138,7 +138,16 @@ struct SettingsUseTests {
         try await outbox.tick(at: epoch)
         #expect(await runner.recorded().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: directory.path))
-        await #expect(throws: RecorderError(reply: "no_mini")) { _ = try await ControlActions(paths: paths, mini: nil, runner: runner).ask("anything") }
+        let checkout = root.appendingPathComponent("repo"), script = checkout.appendingPathComponent("mini/live-meeting-ask")
+        try PrivateFiles.directory(script.deletingLastPathComponent())
+        try Data("#!/usr/bin/env python3\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let helpers = try #require(MeetingHelpers.resolve(Settings(), paths: paths, executable: checkout.appendingPathComponent("mac/.build/debug/lml")))
+        let asking = StubRunner([0], stdout: Data("Friday.\n".utf8))
+        #expect(try await ControlActions(paths: paths, helpers: helpers, runner: asking).ask("anything") == "Friday.")
+        let command = try #require(await asking.recorded().first)
+        #expect(command.executable == "/usr/bin/env" && !command.arguments.contains("/usr/bin/ssh"))
+        #expect(command.arguments.contains("LML_ROOT=\(root.path)") && command.arguments.last == script.resolvingSymlinksInPath().path)
     }
     @Test func theDetectorWatchesOnlyTheListedApps() {
         var detector = Detector(ownPID: 1, clients: MeetingClients(prefixes: ["com.apple.FaceTime"]))
