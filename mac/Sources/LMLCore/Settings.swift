@@ -8,7 +8,7 @@ public struct Settings: Sendable, Equatable {
                                             "com.apple.Safari", "com.microsoft.teams", "com.tinyspeck.slackmacgap", "com.apple.FaceTime",
                                             "com.hnc.Discord", "com.webex"]
     public static let defaultMicApps = ["com.granola.app.helper"]
-    /// The mini's ssh host. Without one, meetings stay on this Mac.
+    /// The mini's ssh host. Without one, meetings stay on this Mac and so do Ask and the live buttons.
     public var sshHost: String?
     /// The folder the mini keeps sessions in.
     public var storageRoot = "~/.local/state/live-meeting"
@@ -79,7 +79,7 @@ public struct Settings: Sendable, Equatable {
     static let fields: [String: Kind] = [
         "ssh_host": .host, "storage_root": .root, "user_name": .text, "emails": .list, "calendars": .list, "domains": .list, "vault": .text,
         "meeting_apps": .list, "mic_apps": .list, "mic_order": .list, "retention_days": .days, "done_command": .text,
-        "calendar_collector": .text, "project_map": .text,
+        "agent_command": .text, "calendar_collector": .text, "project_map": .text,
         "overlay_toggle_key": .shortcut, "overlay_say_key": .shortcut, "overlay_command": .text,
         "screen_context": .flag
     ]

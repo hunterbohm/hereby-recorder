@@ -25,7 +25,7 @@ def test_a_missing_file_gives_the_defaults(tmp_path):
     assert settings == Settings()
     assert settings.ssh_host is None and settings.emails == frozenset() and settings.meeting_apps == MEETING_APPS
     assert (settings.user_name, settings.retention_days, settings.mic_order) == ('the user', 14, ())
-    assert settings.done_command == lml_settings.DONE_COMMAND
+    assert settings.done_command == lml_settings.DONE_COMMAND and settings.agent_command is None
 
 
 def test_the_file_lives_under_xdg_config_home_or_dot_config(tmp_path):
@@ -45,6 +45,7 @@ meeting_apps = ["us.zoom"]
 mic_order = ["Shure", "AirPods"]
 retention_days = 30
 done_command = "run-it now"
+agent_command = "codex exec"
 calendar_collector = "~/tools/collect.py"
 project_map = "~/Notes/projects.tsv"
 '''))
@@ -52,13 +53,14 @@ project_map = "~/Notes/projects.tsv"
     assert settings.storage_root == Path.home() / 'state' and settings.vault == Path.home() / 'Notes'
     assert settings.emails == {'sam@example.com'} and settings.domains == {'example.com'}
     assert settings.meeting_apps == ('us.zoom',) and settings.mic_order == ('Shure', 'AirPods')
-    assert settings.done_command == 'run-it now'
+    assert settings.done_command == 'run-it now' and settings.agent_command == 'codex exec'
     assert settings.calendar_collector == Path.home() / 'tools/collect.py'
     assert settings.project_map == Path.home() / 'Notes/projects.tsv'
 
 
 @pytest.mark.parametrize('text, field', [
     ('retention_days = 0', 'retention_days'),
+    ('agent_command = "  "', 'agent_command'),
     ('retention_days = -3', 'retention_days'),
     ('retention_days = "two"', 'retention_days'),
     ('retention_days = true', 'retention_days'),

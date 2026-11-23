@@ -52,6 +52,7 @@ FIELDS = {
     'mic_order': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
     'retention_days': (lambda v: type(v) is int and v >= 1, 'must be a whole number of days, 1 or more'),
     'done_command': (_text, 'must be a string'),
+    'agent_command': (_text, 'must be a string'),
     'calendar_collector': (_text, 'must be a string'),
     'project_map': (_text, 'must be a string'),
     # The Mac's overlay settings; the mini only checks they are text.
@@ -79,6 +80,8 @@ class Settings:
     mic_order: tuple = ()
     retention_days: int = 14
     done_command: str = DONE_COMMAND
+    # Asked over stdin and stdout in place of Hermes when set.
+    agent_command: str | None = None
     calendar_collector: Path | None = None
     project_map: Path | None = None
 
@@ -112,5 +115,5 @@ def load(file=None):
     lists = {key: tuple(values[key]) for key in ('meeting_apps', 'mic_apps', 'mic_order') if key in values}
     folded = {key: frozenset(item.casefold() for item in values[key]) for key in ('emails', 'domains') if key in values}
     calendars = _fold(values.get('calendars', ()))
-    plain = {key: values[key] for key in ('ssh_host', 'user_name', 'retention_days', 'done_command') if key in values}
+    plain = {key: values[key] for key in ('ssh_host', 'user_name', 'retention_days', 'done_command', 'agent_command') if key in values}
     return Settings(**plain, **paths, **lists, **folded, calendars=calendars)
