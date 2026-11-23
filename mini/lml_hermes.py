@@ -108,16 +108,16 @@ def meeting_lock(root, sid, *, exclusive=False, wait_seconds=120):
         os.close(fd)
 
 
-def run_chat(argv, timeout, lockfd, map_path=None):
+def run_chat(argv, timeout, lockfd, map_path=None, input=None):
     deadline = min(50, float(os.environ.get('LML_SUPERVISE_SECONDS', '50')))
     command = [sys.executable, str(Path(__file__).with_name('lml_supervise.py')), str(deadline), '--', *argv]
     # Hermes cron sets this for its scripts; inherited, it stops `hermes chat` loading its model client.
     env = {key: value for key, value in os.environ.items() if key != 'HERMES_DISABLE_LAZY_INSTALLS'}
-    supervisor = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                  pass_fds=(lockfd,), start_new_session=True,
+    supervisor = subprocess.Popen(command, stdin=None if input is None else subprocess.PIPE, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, text=True, pass_fds=(lockfd,), start_new_session=True,
                                   env={**env, 'LML_LOCK_FD': str(lockfd), **({'LML_HERMES_MAP': str(map_path)} if map_path else {})})
     try:
-        stdout, stderr = supervisor.communicate(timeout=timeout)
+        stdout, stderr = supervisor.communicate(input=input, timeout=timeout)
     except BaseException as exc:
         # SIGTERM lets the supervisor close the spawn-to-pid-report window.
         try:
@@ -136,6 +136,26 @@ def run_chat(argv, timeout, lockfd, map_path=None):
         raise
     stderr = re.sub(r'^lml_child_pid: \d+\s*\n?', '', stderr, count=1, flags=re.M)
     return subprocess.CompletedProcess(argv, supervisor.returncode, stdout, stderr)
+
+
+def agent_command():
+    """`agent_command` as argv, or None when model calls go to Hermes."""
+    text = lml_settings.load().agent_command
+    return shlex.split(text) if text else None
+
+
+def ask_agent(argv, text, timeout, lockfd):
+    """One answer from `agent_command`: the prompt on stdin, the answer on stdout, exit 0. It keeps no chat to delete."""
+    try:
+        result = run_chat(argv, timeout, lockfd, input=text)
+    except OSError:
+        raise CallFailed() from None
+    if result.returncode == 124:
+        raise TimedOut()
+    answer = result.stdout.strip()
+    if result.returncode or not answer:
+        raise CallFailed()
+    return answer
 
 
 def _chat(root, tag, text, timeout, runner, lockfd):
@@ -171,10 +191,20 @@ def _answer(result):
 
 
 def call(root, sid, prompt, *, timeout=45, runner=None, hermes_runner=run_command, deliver=None):
-    root, sid = Path(root), safe_key(sid)
+    root, sid, agent = Path(root), safe_key(sid), agent_command()
     with meeting_lock(root, sid) as lockfd:
         if forgotten(root, sid):
             raise Forgotten()
+        if agent:
+            try:
+                answer = ask_agent(agent, header() + (prompt() if callable(prompt) else prompt), timeout, lockfd)
+                if forgotten(root, sid):
+                    raise Forgotten()
+                return deliver(answer) if deliver is not None else answer
+            except Forgotten:
+                raise
+            except Exception:
+                raise CallFailed() from None
         ids, completed = set(), False
         try:
             result, ids = _chat(root, sid, header() + (prompt() if callable(prompt) else prompt), timeout, runner, lockfd)
@@ -209,8 +239,10 @@ def ask_once(root, text, *, timeout=45, runner=None, hermes_runner=run_command):
     A session that will not delete, or a failed chat that printed no session id, is mapped under `any`,
     so retention's forget retries it later.
     """
-    root = Path(root)
+    root, agent = Path(root), agent_command()
     with meeting_lock(root, ANY) as lockfd:
+        if agent:
+            return ask_agent(agent, text, timeout, lockfd)
         ids = set()
         try:
             result, ids = _chat(root, ANY, text, timeout, runner, lockfd)
@@ -251,9 +283,11 @@ def forget(root, sid, *, runner=run_command, wait_seconds=120):
             mapped = {item['id'] for item in read_jsonl(root / 'hermes_map' / (sid + '.jsonl')) if item.get('id')}
             mapped |= set(read_json(pending_path, {}).get('ids', []))
             atomic_write(pending_path, {'ids': sorted(mapped)})
-            failed = delete_ids(mapped | tagged_ids(sid, runner), runner)
+            # An agent_command answer keeps no chat, so only chats mapped before it was set are left to delete.
+            plain = agent_command() is not None
+            failed = delete_ids(mapped | (set() if plain else tagged_ids(sid, runner)), runner)
             atomic_write(pending_path, {'ids': sorted(failed)})
-            remaining = tagged_ids(sid, runner) | failed
+            remaining = (set() if plain else tagged_ids(sid, runner)) | failed
             incomplete = _remove_local(root, sid)
             if not remaining and not incomplete:
                 pending_path.unlink(missing_ok=True)
