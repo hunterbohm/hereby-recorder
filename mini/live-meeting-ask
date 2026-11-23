@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import sys
 
+if sys.version_info < (3, 11):
+    sys.exit('live-meeting-ask needs Python 3.11 or newer.')
+
 import any_answer
 from live_answer import UNAVAILABLE, answer
 from lml_hermes import TimedOut
