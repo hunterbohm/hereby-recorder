@@ -217,3 +217,11 @@ def test_with_no_installed_app_the_build_needs_no_flag(box):
 
 def test_an_unknown_flag_is_a_usage_error(box):
     assert build(box, '--nope').returncode == 2
+
+
+def test_the_app_records_the_clone_it_was_built_from(box):
+    result = build(box)
+    assert result.returncode == 0, result.stderr
+    info = plistlib.loads((box / 'Apps' / 'LiveMeetingListener.app' / 'Contents' / 'Info.plist').read_bytes())
+    assert os.path.realpath(info['HerebyCheckout']) == os.path.realpath(box / 'pkg')
+    assert info['CFBundleShortVersionString'] == 'v0.0.1'

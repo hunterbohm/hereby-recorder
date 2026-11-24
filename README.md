@@ -36,17 +36,25 @@ The app is built and signed on your Mac. You or your own agent run these steps f
 ```sh
 git clone <this repository> hereby-recorder
 cd hereby-recorder
-git tag local-build
+git checkout "$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)"
 mac/scripts/build-app.sh
 mac/scripts/install.sh
 ```
 
-1. `git tag local-build` marks the commit, because the build stamps the app with a tag. Any tag name works.
+1. `git checkout` moves to the newest release, like `v2.13.0`. The build only runs on a tagged commit, because it stamps the app with the tag. To build unreleased code instead, tag it yourself (`git tag local-build`); that build never offers updates, since there is no release to compare it to.
 2. `mac/scripts/build-app.sh` builds a release binary with Swift Package Manager, assembles `~/Applications/LiveMeetingListener.app`, signs it with the local certificate, and prints the app path. The first build downloads FluidAudio 0.17.7 and takes a few minutes.
 3. `mac/scripts/install.sh` writes the two LaunchAgents (`sh.hereby.recorder` and `sh.hereby.recorder.mic`) to `~/Library/LaunchAgents` and prints the `launchctl bootstrap` command that starts the recorder. It starts nothing itself. Run the printed command when you are ready.
 4. Open System Settings and grant the permissions above when macOS asks.
 
 Check the build with `~/Applications/LiveMeetingListener.app/Contents/MacOS/lml doctor`. To stop the recorder, run `launchctl bootout gui/$(id -u)/sh.hereby.recorder`.
+
+## Update it
+
+The app remembers the folder you built it from. About once a day it asks the place you cloned it from whether a newer release is out. When one is, the menu bar panel shows "Update to v2.14.0" at the bottom of its list. Nothing pops up.
+
+Click it when you are not on a call. It downloads the release into the same folder, builds it, and restarts the recorder, all in the background, in a few minutes. It will not start during a call, if you changed files in that folder, or if the folder is not on a release (for example, you are working on a branch). The panel says which. If the build fails, the panel shows where its log is: `~/Library/Application Support/LiveMeetingListener/update/update.log`.
+
+To update by hand instead, run the same steps from the folder: `git fetch --tags`, `git checkout` the new tag, then `mac/scripts/build-app.sh`.
 
 ## Settings
 

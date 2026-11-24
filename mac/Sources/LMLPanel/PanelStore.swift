@@ -19,6 +19,20 @@ public enum PanelAction: Equatable, Sendable {
     }
 }
 
+/// The quiet update row on the Home screen. Nil shows nothing.
+public enum UpdateNotice: Equatable, Sendable {
+    case available(ReleaseVersion)
+    case refused(ReleaseVersion, UpdateRefusal)
+    case updating(ReleaseVersion)
+    case failed(ReleaseVersion, log: String)
+
+    public var version: ReleaseVersion {
+        switch self {
+        case .available(let version), .refused(let version, _), .updating(let version), .failed(let version, _): version
+        }
+    }
+}
+
 public enum ActionPhase: Equatable, Sendable {
     case idle
     case confirming(PanelAction)
@@ -53,6 +67,8 @@ public final class PanelStore {
     public private(set) var hermesOverrides: [String: HermesOverride] = [:]
     /// Event keys with a Hermes command on its way to the mini; their controls wait.
     public private(set) var hermesPending: Set<String> = []
+    /// A newer release of the app and where updating to it stands.
+    public private(set) var update: UpdateNotice?
 
     @ObservationIgnored private var graceStart: Date
     @ObservationIgnored public let hasMini: Bool
@@ -61,11 +77,15 @@ public final class PanelStore {
     @ObservationIgnored private let openURL: @MainActor (URL) -> Void
     @ObservationIgnored private let actionTimeout: Duration
     @ObservationIgnored private var actionToken: UUID?
+    @ObservationIgnored private let updates: (any UpdateActions)?
+    @ObservationIgnored private let updatePoll: Duration
 
     public init(snapshot: RecorderSnapshot, actions: any RecorderActions,
                 clock: @escaping @MainActor () -> Date = { Date() },
                 actionTimeout: Duration = PanelRules.actionTimeout,
                 hasMini: Bool = true,
+                updates: (any UpdateActions)? = nil,
+                updatePoll: Duration = .seconds(5),
                 openURL: @escaping @MainActor (URL) -> Void) {
         self.snapshot = snapshot
         self.hasMini = hasMini
@@ -73,6 +93,8 @@ public final class PanelStore {
         self.clock = clock
         self.actionTimeout = actionTimeout
         self.openURL = openURL
+        self.updates = updates
+        self.updatePoll = updatePoll
         let start = clock()
         now = start
         graceStart = start
@@ -303,6 +325,63 @@ public final class PanelStore {
         }
     }
 
+    // MARK: Update
+
+    /// Where a failed update's log is, for the Show log link.
+    public var updateLog: String? { updates?.logPath }
+
+    /// Shows the Update row when the clone's remote has a newer release. `Updater` asks the remote at most once a day,
+    /// so this is cheap to call often.
+    public func checkForUpdate() async {
+        guard let updates, !isUpdating else { return }
+        let newer = await updates.newerRelease(now: clock())
+        guard !isUpdating else { return }
+        if let newer, update?.version == newer { return }
+        update = newer.map(UpdateNotice.available)
+    }
+
+    /// Starts the update job, or shows why it can't run now. The job rebuilds and restarts the app, so success ends
+    /// this process; the panel only ever sees a failure.
+    public func startUpdate() async {
+        guard let updates, let version = update?.version, !isUpdating, !isBusy else { return }
+        update = .updating(version)
+        do {
+            try await updates.startUpdate(to: version, inCall: inCall)
+        } catch let refusal as UpdateRefusal {
+            update = .refused(version, refusal)
+            AccessibilityNotification.Announcement(PanelCopy.updateRefusal(refusal)).post()
+            return
+        } catch {
+            failUpdate(version)
+            return
+        }
+        while true {
+            try? await Task.sleep(for: updatePoll)
+            switch await updates.updateProgress() {
+            case .running: continue
+            case .succeeded: update = nil
+            case .failed: failUpdate(version)
+            }
+            return
+        }
+    }
+
+    private var isUpdating: Bool { if case .updating = update { true } else { false } }
+
+    /// Updating restarts the recorder, so it waits for any call: one detected, recording, paused, or held after its
+    /// signal went away.
+    private var inCall: Bool {
+        switch snapshot.phase {
+        case .armed, .recording, .paused: true
+        case .idle, .ended: snapshot.heldUntil != nil
+        }
+    }
+
+    private func failUpdate(_ version: ReleaseVersion) {
+        update = .failed(version, log: updates?.logPath ?? "")
+        AccessibilityNotification.Announcement("Update failed").post()
+    }
+
     public func open(_ url: URL) { openURL(url) }
 
     public func navigate(_ next: PanelFocus) {
@@ -317,6 +396,7 @@ public final class PanelStore {
         cancel()
         if isFailed { action = .idle }
         if !isAskingAny { anyAsk = nil }
+        if case .refused(let version, _) = update { update = .available(version) }
     }
 
     /// The live or paused call, if any, whichever screen the panel shows: the overlay keeps it while the panel shows

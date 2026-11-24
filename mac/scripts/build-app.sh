@@ -108,6 +108,8 @@ mkdir -p "$staging/new.app/Contents/Resources/mini"
 cp -p "$package_dir"/../mini/*.py "$package_dir/../mini/live-meeting-ask" "$package_dir/../mini/live-meeting-quick" "$staging/new.app/Contents/Resources/mini/"
 cp "$package_dir/AppIcon.icns" "$staging/new.app/Contents/Resources/AppIcon.icns"   # drawn by scripts/make-icon.swift
 plutil -replace CFBundleShortVersionString -string "$version" "$staging/new.app/Contents/Info.plist"
+# The app checks this clone's remote for newer release tags and updates it from the panel's Update link.
+plutil -replace HerebyCheckout -string "$(cd "$package_dir/.." && pwd)" "$staging/new.app/Contents/Info.plist"
 "$package_dir/scripts/sign.sh" "$staging/new.app" sh.hereby.recorder
 
 # The build took minutes; a call may have started since the first check.

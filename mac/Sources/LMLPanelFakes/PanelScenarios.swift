@@ -165,6 +165,20 @@ public enum PanelScenarios {
         launch.now = idleNow
         unreachable.tick()
         list.append(PanelScenario(name: "idle-mini-unreachable", recorder: FakeRecorder(stale), store: unreachable))
+        for (name, prepare) in [("idle-update", { (_: FakeUpdates) in }),
+                                ("idle-update-refused", { $0.refuse(.uncommitted) }),
+                                ("idle-update-failed", { $0.progress(.failed) })] as [(String, (FakeUpdates) -> Void)] {
+            let snapshot = RecorderSnapshot(feed: idleFeed)
+            let updates = FakeUpdates()
+            prepare(updates)
+            let store = PanelStore(snapshot: snapshot, actions: FakeRecorder(snapshot), clock: { idleNow }, updates: updates,
+                                   updatePoll: .zero, openURL: { _ in })
+            store.timeZone = zone
+            store.locale = locale
+            await store.checkForUpdate()
+            if name != "idle-update" { await store.startUpdate() }
+            list.append(PanelScenario(name: name, recorder: FakeRecorder(snapshot), store: store))
+        }
         await add("idle-start-failed", RecorderSnapshot(feed: idleFeed), now: idleNow) { fake, store in
             fake.failCalls(true)
             await store.perform(.startInPerson)

@@ -55,6 +55,7 @@ struct HomeView: View {
             ActionFooter(store: store)
                 .padding(.horizontal, 16)
                 .padding(.top, store.action == .idle ? 0 : 8)
+            UpdateRow(store: store)
             Divider().padding(.top, 6)
             HomeFooter(store: store)
         }

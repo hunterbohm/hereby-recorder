@@ -8,9 +8,9 @@ public enum PanelHost {
     /// Installs the status item, its panel, and the Option-M hotkey. Call once on the main thread
     /// of a process that runs the AppKit event loop.
     @MainActor public static func start(model: any RecorderModel, actions: any RecorderActions, hasMini: Bool = true,
-                                        overlay: OverlayOptions = OverlayOptions()) {
+                                        overlay: OverlayOptions = OverlayOptions(), updates: (any UpdateActions)? = nil) {
         guard controller == nil else { return }
-        controller = StatusController(model: model, actions: actions, hasMini: hasMini, overlay: overlay)
+        controller = StatusController(model: model, actions: actions, hasMini: hasMini, overlay: overlay, updates: updates)
     }
 
     /// Tells `overlay_command` the overlay is gone, so a window manager gives the room back before the recorder quits.
@@ -42,9 +42,12 @@ final class StatusController: NSObject, NSPopoverDelegate {
     private var closedAt: Date?
     private var outsideClickMonitor: Any?
     private var anchor: NSPanel?
+    private var updateTimer: Timer?
 
-    init(model: any RecorderModel, actions: any RecorderActions, hasMini: Bool, overlay options: OverlayOptions) {
-        store = PanelStore(snapshot: model.snapshot, actions: actions, hasMini: hasMini, openURL: { NSWorkspace.shared.open($0) })
+    init(model: any RecorderModel, actions: any RecorderActions, hasMini: Bool, overlay options: OverlayOptions,
+         updates: (any UpdateActions)?) {
+        store = PanelStore(snapshot: model.snapshot, actions: actions, hasMini: hasMini, updates: updates,
+                           openURL: { NSWorkspace.shared.open($0) })
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
         item.button?.target = self
@@ -66,6 +69,16 @@ final class StatusController: NSObject, NSPopoverDelegate {
             MainActor.assumeIsolated { self?.store.resetGrace() }
         }
         tick(every: 30)
+        if updates != nil { checkForUpdates() }
+    }
+
+    /// At launch, then hourly; the updater itself asks the remote at most once a day.
+    private func checkForUpdates() {
+        let store = store
+        Task { await store.checkForUpdate() }
+        let timer = Timer(timeInterval: 60 * 60, repeats: true) { _ in Task { @MainActor in await store.checkForUpdate() } }
+        RunLoop.main.add(timer, forMode: .common)
+        updateTimer = timer
     }
 
     @objc private func toggle(_ button: NSStatusBarButton) {

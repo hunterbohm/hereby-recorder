@@ -49,6 +49,7 @@ Resolved by `PanelScreen.resolve(snapshot, now:, focus:, forgotten:, memory:, ha
 - Hermes (Google Meet and Zoom calls, see Hermes below): "Send Hermes" sits beside Join; once on, a card under Join shows where Hermes stands, Cancel, and the Chat replies switch.
 - Under it, the ask field, focused when the panel opens. Typing and Return asks about any meeting; with the field empty, Return opens the selected row, or joins the next call when nothing is selected. ↑ and ↓ move the selection, Escape clears it, and hovering a row selects it.
 - The list: "Later today" (`feed.today` minus the call on top; an event under way shows Now; Meet and Zoom rows carry a small Hermes switch at the right edge), "Recent" (the four newest calls; a filed one names only what is left, like "3 tasks to approve"; Before shows only the last call with this person), then Record in person.
+- Update: when a newer release is out, a quiet "Update to v2.14.0" link sits above the footer (see Updates).
 - Footer: Ready, Call detected, or Needs attention, and the overlay's shortcuts as keycaps.
 - `feed.today` is the rest of today from every calendar account the mini reads (`calendars` in the recorder settings), at most 8; events that ended since the mini last wrote the feed are dropped on the Mac.
 
@@ -85,6 +86,14 @@ When the resolved screen changes to a different subject (another call, another p
 - Feed: `next` and every `today` item carry `key` (the calendar event key) and `hermes` = `{"state": "off|scheduled|joining|waiting_room|in_call|done|failed", "chat": bool, "error": str|null}`. A missing, malformed or unknown `hermes` reads as off and never fails the rest of the feed, so an older mini keeps working; without `key` (or without a mini) the controls stay hidden.
 - Commands (over the panel's ssh runner, 20 s limit, one JSON object and exit 0, else a nonzero exit): `meeting-bot optin <key>`, `meeting-bot optout <key>`, `meeting-bot chat <key> on|off`. The key is single-quoted for the mini's shell when it holds anything but letters, digits and `._@:=+,/-`.
 - Optimistic: the panel shows the change at once (`PanelStore.hermes`), keeps it until a feed built after the mini answered arrives (or 3 min pass), and on failure puts the old state back and shows the one failure line. Controls for that event wait while its command is out. Joining keeps the chat setting the mini reported; cancelling resets it.
+
+## Updates
+
+- Why: people build the app from their own clone, and had to update from Terminal. The link updates that clone and rebuilds, with the same build script, from the panel.
+- Source: `build-app.sh` records the clone's path in the bundle (`HerebyCheckout`) beside the release tag it built (`CFBundleShortVersionString`). Without both, or when the tag is not a release like `v2.13.0` (a `local-build` tag), the panel shows nothing.
+- Check: at launch and hourly the panel asks `Updater`, which runs `git ls-remote --tags origin` in the clone at most once a day, across restarts (`update/check.json` in the state folder). A failed ask counts. Pre-release tags (`v2.14.0-rc.1`) are ignored. A missing clone or remote shows nothing.
+- Update: the link refuses, with one red line, during a call (detected, recording, paused, or held), when the clone has uncommitted changes to tracked files, when it is not exactly on a tag, when it is gone, or while an update runs. Otherwise it loads a one-shot LaunchAgent (`sh.hereby.recorder.update`, from `update/` in the state folder, never loaded at login) that runs `git fetch --tags origin`, `git checkout` of the tag, and `mac/scripts/build-app.sh`, logging to `update/update.log`. It runs outside the recorder's own job, because build-app.sh stops that job and launchd would kill its children. build-app.sh still refuses on its own if a call starts during the build.
+- Progress: "Updating to v2.14.0… The recorder restarts when it's done." The panel polls the job's exit code every 5 s. Success restarts the app, so the panel never shows it; a failure shows the log path with Show log and Try again.
 
 ## Delete: confirm, not undo
 
@@ -135,12 +144,13 @@ Buttons use the panel's own styles (filled primary, outlined secondary, underlin
 | Overlay style menu | Switches between Side strip, Floating card, Top pill | Never | n/a | The overlay moves to the style's home spot | n/a | n/a | n/a | "Overlay style" | Tab, Space |
 | Texted warning | From `feed.live.warnings` for this sid, inline at its time: "Texted to your phone · 1 of 3" and the text | Hidden for other sessions | n/a | n/a | n/a | n/a | n/a | One element | Not focusable |
 | Needs access | Pill, health line, what is off and why it matters, the next call and the text that would follow; "All recent" opens the list | Only in place of Idle | n/a | Ready returns on the next healthy snapshot | No next-call line without a linked meeting | n/a | n/a | One element | "Open System Settings" is the default button |
+| Update | "Update to v2.14.0" link above the footer of Home (Idle, Before, and the list opened from a call); starts the update job | Hidden without a newer release or a stamped clone; disabled while an action runs | Spinner and "Updating to v2.14.0… The recorder restarts when it's done." | The app restarts on the new version | n/a | Refused: one red line under the link ("Not now: updating restarts the recorder. Update after the call.", uncommitted changes, not on a release, folder gone, already running). Failed: "Couldn't update to v2.14.0. The log says why:", the log path, Show log, Try again | Try again reruns it; closing the panel clears a refusal | "Update to v2.14.0", hint "Installs the new version and restarts the recorder"; announces the refusal or "Update failed" | Tab, Space |
 | Action footer | Shows the running or failed action | Hidden when idle | Spinner and running text | Disappears | n/a | Red line with the failure text; cleared by the next action, a phase change, or closing the panel | Retry is the same button | Failure text announced | Not focusable |
 
 ## PROOF
 
 - Fidelity: production SwiftUI views rendered by `lml-panel-snapshots <dir>` from fake snapshots, light and dark, hosted in a borderless window that is never ordered front so scroll views get real geometry.
 - Performance: `lml-panel-snapshots --measure` times a one-second tick, a new line arriving, and the recorder's publish at 4 and 400 lines, then checks the scroll behavior.
-- Tests: `scripts/test.sh` covers the snapshot to screen and icon mapping, the conversation merge, warnings shown once, the paused memory, every action on a fake recorder, confirmation, stale confirmations, busy, timeout, failure and retry, both ask paths, the filed flash, wake grace, hotkey registration and dispatch, and `askAnyMeeting` over ssh including a missing command.
+- Tests: `scripts/test.sh` covers the snapshot to screen and icon mapping, the conversation merge, warnings shown once, the paused memory, every action on a fake recorder, confirmation, stale confirmations, busy, timeout, failure and retry, both ask paths, the filed flash, wake grace, hotkey registration and dispatch, `askAnyMeeting` over ssh including a missing command, and the update row (release tags, the daily check, every refusal, the job's plist, and the job's script run against a throwaway clone).
 - Evidence level: internal concept proof, not used on a real call yet. Real use is the gate.
 - Open risks: focus hand-back after the panel closes and the Privacy Settings anchors are untested on a live screen.

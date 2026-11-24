@@ -25,7 +25,9 @@ struct UsageError: Error {}
         dispatchMain()
     }
     @MainActor static func presentPanel(model: any RecorderModel, actions: any RecorderActions, settings: Settings) {
-        PanelHost.start(model: model, actions: actions, hasMini: settings.mini != nil, overlay: OverlayOptions(settings))
+        // Only an app that build-app.sh stamped with its clone and a release tag offers updates.
+        let updates = UpdateCheckout(info: Bundle.main.infoDictionary).map { Updater(checkout: $0, root: SessionPaths().root) }
+        PanelHost.start(model: model, actions: actions, hasMini: settings.mini != nil, overlay: OverlayOptions(settings), updates: updates)
     }
     @MainActor static func outcome(_ args: [String]) async -> Int32 {
         do { try await execute(args); return 0 }

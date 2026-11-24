@@ -30,6 +30,20 @@ public enum PanelCopy {
 
     static let privacy = "x-apple.systempreferences:com.apple.preference.security?"
 
+    public static func updateTitle(_ version: ReleaseVersion) -> String { "Update to \(version.tag)" }
+    public static func updating(_ version: ReleaseVersion) -> String { "Updating to \(version.tag)… The recorder restarts when it's done." }
+    public static func updateFailed(_ version: ReleaseVersion) -> String { "Couldn't update to \(version.tag). The log says why:" }
+
+    public static func updateRefusal(_ refusal: UpdateRefusal) -> String {
+        switch refusal {
+        case .inCall: "Not now: updating restarts the recorder. Update after the call."
+        case .uncommitted: "Not updated: the folder the app was built from has uncommitted changes. Commit or undo them, then try again."
+        case .notOnTag: "Not updated: the folder the app was built from isn't on a release, so it was left alone. Update it by hand."
+        case .noCheckout: "Not updated: the folder the app was built from is gone. Build the new version by hand."
+        case .running: "An update is already running."
+        }
+    }
+
     public static func running(_ action: PanelAction) -> String {
         switch action {
         case .pause: "Pausing…"
