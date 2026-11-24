@@ -100,6 +100,16 @@ def test_answers_from_matching_past_notes_and_the_knowledge_base_and_keeps_nothi
     assert files(vault) == before
 
 
+def test_a_meeting_notes_folder_replaces_the_vaults_meetings_folder(tmp_path, vault):
+    notes = tmp_path / 'Meetings'
+    (vault / MEETINGS).rename(notes)
+    (tmp_path / 'xdg' / 'hereby').mkdir(parents=True)
+    (tmp_path / 'xdg' / 'hereby' / 'recorder.toml').write_text(f'meeting_notes = "{notes}"\n')
+    hermes = HermesStub('Waiting on the visa (Weekly Sync, Oct 6).')
+    assert ask('What did Dana and I decide about Poland?', tmp_path / 'root', vault, hermes) == 'Waiting on the visa (Weekly Sync, Oct 6).'
+    assert 'Dana waits on the Poland visa' in hermes.prompts[0] and '(2026-10-06)' in hermes.prompts[0]
+
+
 def test_the_most_relevant_notes_go_first_and_at_most_three(tmp_path, vault):
     for day in range(10, 15):
         meeting(vault, f'2026-09-{day} 1500 Weekly Sync — Sam & Dana', ['Dana Whitfield'], '## Summary\nRoutine.\n')

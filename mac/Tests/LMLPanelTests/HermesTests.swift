@@ -71,13 +71,17 @@ struct HermesDecodingTests {
     }
 }
 
+private let teamsURL = "https://teams.microsoft.com/l/meetup-join/x"
+
 @MainActor
 struct HermesControlTests {
-    @Test func onlyMeetCallsWithAKeyOnAMiniGetControls() {
+    @Test func onlyMeetAndZoomCallsWithAKeyOnAMiniGetControls() {
         let withMeet = PanelStore(snapshot: home(next()), actions: FakeRecorder(), clock: { at("13:00") }, openURL: { _ in })
         #expect(heroTarget(withMeet)?.key == key)
         let zoom = PanelStore(snapshot: home(next(url: zoomURL)), actions: FakeRecorder(), clock: { at("13:00") }, openURL: { _ in })
-        #expect(heroTarget(zoom) == nil)
+        #expect(heroTarget(zoom)?.key == key)
+        let teams = PanelStore(snapshot: home(next(url: teamsURL)), actions: FakeRecorder(), clock: { at("13:00") }, openURL: { _ in })
+        #expect(heroTarget(teams) == nil)
         let noLink = PanelStore(snapshot: home(next(url: nil)), actions: FakeRecorder(), clock: { at("13:00") }, openURL: { _ in })
         #expect(heroTarget(noLink) == nil)
         let oldMini = PanelStore(snapshot: home(next(key: nil)), actions: FakeRecorder(), clock: { at("13:00") }, openURL: { _ in })
@@ -89,10 +93,11 @@ struct HermesControlTests {
     @Test func rowsFollowTheSameRules() {
         let today = [FeedBuilder.agenda("A", start: at("14:00"), end: at("14:30"), url: meetURL, key: "a"),
                      FeedBuilder.agenda("B", start: at("15:00"), end: at("15:30"), url: zoomURL, key: "b"),
-                     FeedBuilder.agenda("C", start: at("16:00"), end: at("16:30"), url: meetURL)]
+                     FeedBuilder.agenda("C", start: at("16:00"), end: at("16:30"), url: meetURL),
+                     FeedBuilder.agenda("D", start: at("17:00"), end: at("17:30"), url: teamsURL, key: "d")]
         let store = PanelStore(snapshot: home(today: today), actions: FakeRecorder(), clock: { at("13:00") }, openURL: { _ in })
         guard case .idle(let content) = store.screen else { Issue.record("expected idle"); return }
-        #expect(content.today.map { store.hermesTarget(for: $0)?.key } == ["a", nil, nil])
+        #expect(content.today.map { store.hermesTarget(for: $0)?.key } == ["a", "b", nil, nil])
     }
 
     @Test func sendingHermesShowsAtOnceThenSticksOnceTheMiniAnswers() async throws {
@@ -263,9 +268,12 @@ struct HermesCopyTests {
     }
 
     @Test func onlyMeetLinksQualify() {
-        #expect(PanelLinks.isMeet("https://meet.google.com/abc-defg-hij"))
-        #expect(!PanelLinks.isMeet("https://us02web.zoom.us/j/1"))
-        #expect(!PanelLinks.isMeet("https://teams.microsoft.com/l/meetup-join/x"))
-        #expect(!PanelLinks.isMeet(nil))
+        #expect(PanelLinks.hermesCanJoin("https://meet.google.com/abc-defg-hij"))
+        #expect(PanelLinks.hermesCanJoin("https://us02web.zoom.us/j/8812345678"))
+        #expect(PanelLinks.hermesCanJoin("https://acme.zoom.us/j/84262542688?pwd=abc.1"))
+        #expect(!PanelLinks.hermesCanJoin("https://us02web.zoom.us/j/1"))
+        #expect(!PanelLinks.hermesCanJoin("https://zoom.us/my/someone"))
+        #expect(!PanelLinks.hermesCanJoin("https://teams.microsoft.com/l/meetup-join/x"))
+        #expect(!PanelLinks.hermesCanJoin(nil))
     }
 }

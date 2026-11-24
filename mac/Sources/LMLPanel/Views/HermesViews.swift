@@ -1,7 +1,7 @@
 import SwiftUI
 import LMLCore
 
-/// "Send Hermes" beside Join on the next call: Hermes's notetaker joins this Google Meet call.
+/// "Send Hermes" beside Join on the next call: Hermes's notetaker joins this Google Meet or Zoom call.
 struct SendHermesButton: View {
     let target: HermesTarget
     let store: PanelStore

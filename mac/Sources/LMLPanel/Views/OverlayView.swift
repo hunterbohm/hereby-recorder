@@ -200,6 +200,11 @@ private struct OverlayHeader: View {
             .fixedSize()
             .help("Overlay style")
             .accessibilityLabel("Overlay style")
+            Button("End") { Task { await store.perform(.stop) } }
+                .buttonStyle(OverlayEndStyle())
+                .disabled(store.isBusy)
+                .help("Stop recording; the call still files")
+                .accessibilityLabel("Stop recording")
             Button { store.toggleOverlay() } label: { Image(systemName: "eye.slash") }
                 .buttonStyle(OverlayIconStyle())
                 .help(store.overlayToggleHint.map { "Hide until the next call (\($0) shows it again)" } ?? "Hide until the next call")
@@ -215,6 +220,18 @@ private struct OverlayIconStyle: ButtonStyle {
             .foregroundStyle(.secondary)
             .frame(width: 22, height: 22)
             .background(.white.opacity(configuration.isPressed ? 0.14 : 0.0001), in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+    }
+}
+
+private struct OverlayEndStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(Color.red.opacity(configuration.isPressed ? 0.6 : 0.8), in: RoundedRectangle(cornerRadius: 6))
             .contentShape(Rectangle())
     }
 }

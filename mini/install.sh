@@ -59,14 +59,19 @@ if [ -L "$tick" ] || ! cmp -s "$mini/hermes-meeting-bot-tick.sh" "$tick"; then
 fi
 run chmod +x "$tick"
 tick_job=meeting-bot-tick
+# A cron expression, not 'every 1m'. Hermes's scheduler looks for due jobs once a minute, at the same second each time.
+# An 'every 1m' job is due 60 seconds after its last run finished, which is just after that look, so it ran every 2
+# minutes. A '* * * * *' job is due at the next whole minute after its last run finished, so it runs every minute as long
+# as each run ends before that minute: the tick returns at once and leaves the slow work to `meeting-bot follow`.
+tick_schedule='* * * * *'
 tick_state=$(hermes_python -c "from cron.jobs import resolve_job_ref; print(\"present\" if resolve_job_ref(\"$tick_job\") else \"absent\")")
 case $tick_state in
     present)
-        run hermes cron edit "$tick_job" --schedule 'every 1m' --script meeting-bot-tick.sh --no-agent \
+        run hermes cron edit "$tick_job" --schedule "$tick_schedule" --script meeting-bot-tick.sh --no-agent \
             --deliver photon --failure-deliver local ;;
     absent)
         run hermes cron create --name "$tick_job" --script meeting-bot-tick.sh --no-agent \
-            --deliver photon --failure-deliver local 'every 1m' ;;
+            --deliver photon --failure-deliver local "$tick_schedule" ;;
     *)
         echo "Unexpected Hermes job lookup output: $tick_state" >&2
         exit 1 ;;

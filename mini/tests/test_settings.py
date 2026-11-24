@@ -25,7 +25,8 @@ def test_a_missing_file_gives_the_defaults(tmp_path):
     assert settings == Settings()
     assert settings.ssh_host is None and settings.emails == frozenset() and settings.meeting_apps == MEETING_APPS
     assert (settings.user_name, settings.retention_days, settings.mic_order) == ('the user', 14, ())
-    assert settings.done_command == lml_settings.DONE_COMMAND
+    assert settings.done_command == lml_settings.DONE_COMMAND and settings.agent_command is None
+    assert settings.meeting_notes is None
 
 
 def test_the_file_lives_under_xdg_config_home_or_dot_config(tmp_path):
@@ -41,24 +42,28 @@ user_name = "Sam"
 emails = ["Sam@Example.com"]
 domains = ["Example.com"]
 vault = "~/Notes"
+meeting_notes = "~/Notes/Meetings"
 meeting_apps = ["us.zoom"]
 mic_order = ["Shure", "AirPods"]
 retention_days = 30
 done_command = "run-it now"
+agent_command = "codex exec"
 calendar_collector = "~/tools/collect.py"
 project_map = "~/Notes/projects.tsv"
 '''))
     assert (settings.ssh_host, settings.user_name, settings.retention_days) == ('studio', 'Sam', 30)
     assert settings.storage_root == Path.home() / 'state' and settings.vault == Path.home() / 'Notes'
+    assert settings.meeting_notes == Path.home() / 'Notes/Meetings'
     assert settings.emails == {'sam@example.com'} and settings.domains == {'example.com'}
     assert settings.meeting_apps == ('us.zoom',) and settings.mic_order == ('Shure', 'AirPods')
-    assert settings.done_command == 'run-it now'
+    assert settings.done_command == 'run-it now' and settings.agent_command == 'codex exec'
     assert settings.calendar_collector == Path.home() / 'tools/collect.py'
     assert settings.project_map == Path.home() / 'Notes/projects.tsv'
 
 
 @pytest.mark.parametrize('text, field', [
     ('retention_days = 0', 'retention_days'),
+    ('agent_command = "  "', 'agent_command'),
     ('retention_days = -3', 'retention_days'),
     ('retention_days = "two"', 'retention_days'),
     ('retention_days = true', 'retention_days'),
@@ -71,6 +76,8 @@ project_map = "~/Notes/projects.tsv"
     ('mic_order = [1, 2]', 'mic_order'),
     ('meeting_apps = ["us.zoom", ""]', 'meeting_apps'),
     ('user_name = ""', 'user_name'),
+    ('notetaker_notice = " "', 'notetaker_notice'),
+    (f'notetaker_notice = "{"x" * 501}"', 'notetaker_notice'),
     ('colour = "blue"', 'colour'),
 ])
 def test_a_bad_value_names_its_field_and_file(tmp_path, text, field):
@@ -78,6 +85,12 @@ def test_a_bad_value_names_its_field_and_file(tmp_path, text, field):
     with pytest.raises(SettingsError) as error:
         load(file)
     assert field in str(error.value) and str(file) in str(error.value)
+
+
+def test_the_notetaker_notice_is_read_and_has_no_default_here(tmp_path):
+    notice = "Hi, I'm Sam's AI notetaker. I'm recording and transcribing this call for Sam's notes."
+    assert load(write(tmp_path, f'notetaker_notice = "{notice}"\n')).notetaker_notice == notice
+    assert Settings().notetaker_notice is None, 'without it, the bot service posts its own neutral notice'
 
 
 def test_a_file_that_is_not_toml_names_the_file(tmp_path):

@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 
 from lml_common import atomic_write, file_size, forgotten, locked, nonnegative_int, private_dir, root_path, safe_key
@@ -28,16 +29,24 @@ def replace(path, offset, data):
 
 
 MODES = {'transcript.jsonl': append, 'marks.jsonl': append, 'meta.json': replace, 'live.json': replace,
-         'speakers.json': replace}
+         'speakers.json': replace, 'boards.json': replace}
+# The meeting bot's whiteboards: a picture and an Excalidraw file per board, named in boards.json.
+BOARD = re.compile(r'^board-\d{1,2}\.(?:png|excalidraw)$')
+
+
+def session_file(name):
+    if name in MODES or BOARD.match(name):
+        return name
+    raise argparse.ArgumentTypeError(f'not a session file: {name}')
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('sid', type=safe_key)
-    parser.add_argument('file', choices=MODES)
+    parser.add_argument('file', type=session_file)
     parser.add_argument('offset', type=nonnegative_int)
     args = parser.parse_args()
-    write = MODES[args.file]
+    write = MODES.get(args.file, replace)
     if write is replace and args.offset:
         parser.error(args.file + ' is replaced whole, so offset must be 0')
     data = sys.stdin.buffer.read()

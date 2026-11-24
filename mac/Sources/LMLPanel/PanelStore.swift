@@ -239,12 +239,12 @@ public final class PanelStore {
 
     /// Hermes controls need the mini, which holds the bot, and an event key to send back to it.
     public func hermesTarget(for meeting: PanelMeeting) -> HermesTarget? {
-        guard hasMini, PanelLinks.isMeet(meeting.meetingURL) else { return nil }
+        guard hasMini, PanelLinks.hermesCanJoin(meeting.meetingURL) else { return nil }
         return HermesTarget(meeting)
     }
 
     public func hermesTarget(for item: PanelAgendaItem) -> HermesTarget? {
-        guard hasMini, PanelLinks.isMeet(item.meetingURL) else { return nil }
+        guard hasMini, PanelLinks.hermesCanJoin(item.meetingURL) else { return nil }
         return HermesTarget(item)
     }
 

@@ -47,11 +47,13 @@ FIELDS = {
     'calendars': (_addresses, 'must be a list of email addresses'),
     'domains': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
     'vault': (_text, 'must be a string'),
+    'meeting_notes': (_text, 'must be a string'),
     'meeting_apps': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
     'mic_apps': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
     'mic_order': (lambda v: isinstance(v, list) and all(map(_text, v)), 'must be a list of strings'),
     'retention_days': (lambda v: type(v) is int and v >= 1, 'must be a whole number of days, 1 or more'),
     'done_command': (_text, 'must be a string'),
+    'agent_command': (_text, 'must be a string'),
     'calendar_collector': (_text, 'must be a string'),
     'project_map': (_text, 'must be a string'),
     # The Mac's overlay settings; the mini only checks they are text.
@@ -60,6 +62,9 @@ FIELDS = {
     'overlay_command': (_text, 'must be a string'),
     # The Mac's choice to send the screen with live questions.
     'screen_context': (lambda value: isinstance(value, bool), 'must be true or false'),
+    # What the meeting notetaker posts in a call's chat as it gets in, before it records (meeting_bot.py). Meet's chat
+    # takes 500 characters.
+    'notetaker_notice': (lambda value: _text(value) and len(value) <= 500, 'must be a string of at most 500 characters'),
 }
 
 
@@ -74,13 +79,19 @@ class Settings:
     # The Google accounts the schedule reads. Empty leaves the collector on its own accounts. Counted among `emails`.
     calendars: tuple = ()
     vault: Path = Path.home() / 'vault'
+    # Ask any meeting's notes folder in place of the vault's meetings folder.
+    meeting_notes: Path | None = None
     meeting_apps: tuple = MEETING_APPS
     mic_apps: tuple = MIC_APPS
     mic_order: tuple = ()
     retention_days: int = 14
     done_command: str = DONE_COMMAND
+    # Asked over stdin and stdout in place of Hermes when set.
+    agent_command: str | None = None
     calendar_collector: Path | None = None
     project_map: Path | None = None
+    # None: the bot service posts its own neutral notice.
+    notetaker_notice: str | None = None
 
 
 def path(environ=os.environ):
@@ -108,9 +119,11 @@ def load(file=None):
         if check is None or not check(value):
             raise SettingsError(file, key, problem)
     paths = {key: Path(values[key]).expanduser()
-             for key in ('storage_root', 'vault', 'calendar_collector', 'project_map') if key in values}
+             for key in ('storage_root', 'vault', 'meeting_notes', 'calendar_collector', 'project_map') if key in values}
     lists = {key: tuple(values[key]) for key in ('meeting_apps', 'mic_apps', 'mic_order') if key in values}
     folded = {key: frozenset(item.casefold() for item in values[key]) for key in ('emails', 'domains') if key in values}
     calendars = _fold(values.get('calendars', ()))
-    plain = {key: values[key] for key in ('ssh_host', 'user_name', 'retention_days', 'done_command') if key in values}
+    plain = {key: values[key] for key in ('ssh_host', 'user_name', 'retention_days', 'done_command', 'notetaker_notice',
+                                          'agent_command')
+             if key in values}
     return Settings(**plain, **paths, **lists, **folded, calendars=calendars)

@@ -20,7 +20,8 @@ TASKS = '02 - Planning/Task Records'
 # Live work: the new words plus the old ones still in notes. backlog, triage, parked, done and canceled are not owed.
 OWES = {'todo', 'in-progress', 'waiting', 'in-review', 'open', 'blocked'}
 OWED = 5
-CANCELLED = 'meeting/cancelled'
+# A calendar note says it was called off in its status (the vault dropped tags on 2026-11-21).
+CANCELLED = re.compile(r'^status:[ \t]*["\']?canceled["\']?[ \t]*$', re.M)
 REVIEW_SENT = ('photon', 'discord-fallback')
 RECENT = 5
 TODAY = 8
@@ -94,7 +95,7 @@ def calendar_note(started, ended, notes, tz):
     best = None
     for path, text in notes:
         front = _front(text)
-        times = None if CANCELLED in front else _note_times(front, tz)
+        times = None if CANCELLED.search(front) else _note_times(front, tz)
         if times is None:
             continue
         start, end = times

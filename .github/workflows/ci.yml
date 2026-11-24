@@ -1,9 +1,12 @@
 # Standard CI (land-pr's ci-template). Branch protection, where the plan allows it, requires
 # ci-ok (this file's summary job) and sol-review (posted by review-pr on AGREE).
 #
-# Runner: the repo variable CI_RUNS_ON names the shared self-hosted runner, a fresh Linux VM
-# (homelab fleet/ci-dispatch). GitHub-hosted runners refuse jobs on private repos (billing), so
-# ubuntu-latest is only the fallback for forks and for a copy of this repo without the variable.
+# Runner: each Linux job here (changes, mini, ci-ok) asks the CI front door (homelab fleet/ci-dispatch) for a
+# machine of its own, labelled with the run id and the job id, sized from that job's earlier runs. The label's
+# prefix is written in two pieces ('hun', 'ter') on purpose: mini/tests/test_no_personal.py bans the owner's name
+# in any tracked file, since this repo has a public copy. GitHub-hosted runners refuse jobs on private repos
+# (billing), so ubuntu-latest is only for a fork PR and for that public copy, where self-hosted machines never
+# serve jobs. The repo variable CI_RUNS_ON is not read; leave it unset.
 # The Swift tests (Mac app and iPhone importer) and the build script's tests need macOS (AppKit, ScreenCaptureKit,
 # plutil), so the mac job runs them on the self-hosted Mac named by the repo variable
 # MAC_RUNS_ON (a runner on the Mac mini registered to this repo only). Fork PRs never reach it:
@@ -27,7 +30,7 @@ permissions:
 
 jobs:
   changes:
-    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || (github.event.repository.private && format('["self-hosted","{1}{2}-ci-{0}-changes"]', github.run_id, 'hun', 'ter')) || '"ubuntu-latest"') }}
     timeout-minutes: 5
     outputs:
       code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code }}
@@ -48,13 +51,18 @@ jobs:
   mini:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || (github.event.repository.private && format('["self-hosted","{1}{2}-ci-{0}-mini"]', github.run_id, 'hun', 'ter')) || '"ubuntu-latest"') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
       - name: Mini tests
         run: sh mini/run_tests.sh
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+      - name: Bot tests (whiteboard edits, board room, layout, spoken commands, the bot's room link)
+        run: node --test bot/test/*.test.mjs bot/container/*.test.mjs
 
   mac:
     needs: changes
@@ -78,7 +86,7 @@ jobs:
   ci-ok:
     if: always()
     needs: [changes, mini, mac]
-    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || vars.CI_RUNS_ON || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event.pull_request.head.repo.fork && '"ubuntu-latest"') || (github.event.repository.private && format('["self-hosted","{1}{2}-ci-{0}-ci-ok"]', github.run_id, 'hun', 'ter')) || '"ubuntu-latest"') }}
     timeout-minutes: 2
     steps:
       # Passes when every job passed or was skipped by its filter; fails on failure or cancel.

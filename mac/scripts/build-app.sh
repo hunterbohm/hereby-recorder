@@ -103,6 +103,9 @@ cp "$binary_dir/lml" "$staging/new.app/Contents/MacOS/lml"
 cp "$package_dir/Info.plist" "$staging/new.app/Contents/Info.plist"
 mkdir -p "$staging/new.app/Contents/Resources"
 cp "$package_dir/../handoff/hereby-handoff.sh" "$staging/new.app/Contents/Resources/hereby-handoff.sh"
+# Ask and the live buttons run these on the Mac when there is no ssh_host.
+mkdir -p "$staging/new.app/Contents/Resources/mini"
+cp -p "$package_dir"/../mini/*.py "$package_dir/../mini/live-meeting-ask" "$package_dir/../mini/live-meeting-quick" "$staging/new.app/Contents/Resources/mini/"
 cp "$package_dir/AppIcon.icns" "$staging/new.app/Contents/Resources/AppIcon.icns"   # drawn by scripts/make-icon.swift
 plutil -replace CFBundleShortVersionString -string "$version" "$staging/new.app/Contents/Info.plist"
 "$package_dir/scripts/sign.sh" "$staging/new.app" sh.hereby.recorder

@@ -3,6 +3,8 @@
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
+  // The board page and its code (public/board), served by src/index.js, which decides who may open what.
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true, "html_handling": "none" },
   "containers": [
     {
       "class_name": "MeetBot",
@@ -14,8 +16,32 @@
     }
   ],
   "durable_objects": {
-    "bindings": [{ "name": "MEET_BOT", "class_name": "MeetBot" }]
+    "bindings": [{ "name": "MEET_BOT", "class_name": "MeetBot" }, { "name": "BOARD_ROOM", "class_name": "BoardRoom" },
+      { "name": "SHORT_LINKS", "class_name": "ShortLink" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MeetBot"] }],
-  "observability": { "enabled": true }
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MeetBot"] }, { "tag": "v2", "new_sqlite_classes": ["BoardRoom"] },
+    { "tag": "v3", "new_sqlite_classes": ["ShortLink"] }],
+  "observability": { "enabled": true },
+  "env": {
+    // The test copy (bot/README.md): `npx wrangler deploy --env test`. Its own Worker, container app and API_TOKEN, and
+    // no GOOGLE_EMAIL or GOOGLE_PASSWORD, so it can never sign in as the notetaker or join a call as it.
+    "test": {
+      "name": "hermes-meet-bot-test",
+      "containers": [
+        {
+          "name": "hermes-meet-bot-test-meetbot",
+          "class_name": "MeetBot",
+          "image": "./container/Dockerfile",
+          "instance_type": "standard-2",
+          "max_instances": 1
+        }
+      ],
+      "durable_objects": {
+        "bindings": [{ "name": "MEET_BOT", "class_name": "MeetBot" }, { "name": "BOARD_ROOM", "class_name": "BoardRoom" },
+          { "name": "SHORT_LINKS", "class_name": "ShortLink" }]
+      },
+      "migrations": [{ "tag": "v1", "new_sqlite_classes": ["MeetBot"] }, { "tag": "v2", "new_sqlite_classes": ["BoardRoom"] },
+        { "tag": "v3", "new_sqlite_classes": ["ShortLink"] }]
+    }
+  }
 }

@@ -288,6 +288,7 @@ struct MeetingPresence {
     private let monitor = ProcessMonitor()
     private let watch = LoopWatch(limit: 60)
     private let outbox: Outbox
+    private let helpers: MeetingHelpers?
     private var detector: Detector
     /// The capture, or the held call while `hold` is set. A new capture, or none, ends the hold.
     private var capture: CaptureSession? { didSet { if capture !== oldValue { hold = nil } } }
@@ -314,14 +315,17 @@ struct MeetingPresence {
         self.paths = paths; self.options = options; self.configURL = configURL; self.settings = settings
         config = (try? Config.load(configURL)) ?? Config()
         outbox = Outbox(paths: paths, mini: settings.mini, done: settings.mini == nil ? Self.doneCommand(settings) : nil, onHandoff: Self.announce, interval: config.sync_interval_s)
+        helpers = MeetingHelpers.resolve(settings, paths: paths, executable: Self.executable)
+        if helpers == nil { FileHandle.standardError.write(Data("helpers_unavailable: no ssh_host, and no agent_command or no mini/ scripts beside this app, so Ask is off\n".utf8)) }
         detector = Detector(ownPID: getpid(), clients: MeetingClients(prefixes: settings.meetingApps, micPrefixes: settings.micApps))
         pause = PauseStore(root: paths.root)
     }
-    var actions: ControlActions { ControlActions(paths: paths, mini: settings.mini, screenContext: settings.screenContext) }
+    var actions: ControlActions { ControlActions(paths: paths, helpers: helpers, screenContext: settings.screenContext) }
+    private static var executable: URL { Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0]) }
     /// What a finished meeting runs when it stays on this Mac. Nil, with a note, when the setting is unreadable or no handoff script is installed.
     private static func doneCommand(_ settings: Settings) -> DoneCommand? {
         do {
-            if let command = try DoneCommand.resolve(settings, executable: Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])) { return command }
+            if let command = try DoneCommand.resolve(settings, executable: executable) { return command }
             FileHandle.standardError.write(Data("handoff_unavailable: no \(DoneCommand.handoffName) found beside this app, so finished meetings wait\n".utf8))
         } catch { FileHandle.standardError.write(Data("handoff_unavailable: \(error)\n".utf8)) }
         return nil

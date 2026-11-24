@@ -1,7 +1,8 @@
 # Hereby Recorder settings. The Mac and the mini each read ~/.config/hereby/recorder.toml, or
 # $XDG_CONFIG_HOME/hereby/recorder.toml when that is set. Every key is optional. Restart the recorder after a change.
 
-# The mini's ssh host, as `ssh <host>` reaches it. Without it, meetings stay on the Mac.
+# The mini's ssh host, as `ssh <host>` reaches it. Without it, meetings stay on the Mac, and Ask and the live buttons run
+# on the Mac with agent_command.
 ssh_host = "studio"
 # The folder the mini keeps sessions in.
 storage_root = "~/.local/state/live-meeting"
@@ -16,6 +17,9 @@ calendars = ["sam@example.com", "sam.lee@example.org"]
 domains = ["example.com"]
 # The Obsidian vault the mini reads meeting notes from.
 vault = "~/Notes"
+# The folder of filed meeting notes, named like "2026-10-06 1000 Weekly Sync.md", that Ask any meeting reads. Without
+# it, Ask any meeting reads "06 - Contacts/Meetings" in the vault.
+meeting_notes = "~/Notes/Meetings"
 # The calendar collector and the project map the mini's meeting briefs read.
 calendar_collector = "~/tools/calendar/collect.py"
 project_map = "~/Notes/projects.tsv"
@@ -35,6 +39,17 @@ retention_days = 14
 # word becomes the meeting's folder. Without it, handoff/hereby-handoff.sh {session} prints the transcript path for your
 # agent. See handoff/README.md.
 done_command = "my-agent file-meeting {session}"
+# What the mini's meeting notetaker posts in a call's chat the moment it is let in. It records and listens only once
+# the chat shows it. Without this key it posts: "Hi, I'm an AI notetaker. I'm recording and transcribing this call for
+# the person who invited me. If you'd rather not be recorded, ask them to remove me." At most 500 characters.
+notetaker_notice = "Hi, I'm Sam's AI notetaker. I'm recording and transcribing this call for Sam's notes. If you'd rather not be recorded, ask Sam to remove me."
+# The agent Ask, Ask any meeting and the live buttons ask, as a command line that reads the prompt on stdin, prints the
+# answer and exits 0. Forget cannot reach the agent's own history, so pick a command that keeps none, like Claude's
+# --no-session-persistence below. Without it, the mini's Ask asks Hermes and its live buttons call the screen model
+# directly, and a Mac with no ssh_host has no Ask. Read screen sends a picture, so it still needs the screen model.
+# Meeting text is untrusted, so turn the agent's tools off. The recorder's PATH has only ~/.local/bin,
+# /opt/homebrew/bin, /usr/local/bin and the system folders, so name the tool by its full path if it lives elsewhere.
+agent_command = 'claude -p --no-session-persistence --tools ""'
 
 # The call overlay's shortcuts, written like "option+return" or "control+option+return"; "off" turns one off.
 # Change one when another app already uses it, like a tiling window manager's terminal key.

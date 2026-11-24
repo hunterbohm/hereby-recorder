@@ -8,7 +8,7 @@ public struct Settings: Sendable, Equatable {
                                             "com.apple.Safari", "com.microsoft.teams", "com.tinyspeck.slackmacgap", "com.apple.FaceTime",
                                             "com.hnc.Discord", "com.webex"]
     public static let defaultMicApps = ["com.granola.app.helper"]
-    /// The mini's ssh host. Without one, meetings stay on this Mac.
+    /// The mini's ssh host. Without one, meetings stay on this Mac, and so do Ask and the live buttons when `agentCommand` is set.
     public var sshHost: String?
     /// The folder the mini keeps sessions in.
     public var storageRoot = "~/.local/state/live-meeting"
@@ -21,6 +21,9 @@ public struct Settings: Sendable, Equatable {
     public var retentionDays = 14
     /// What runs when a meeting has ended, as a command line. Nil means the handoff script.
     public var doneCommand: String?
+    /// The agent Ask and the live buttons ask on this Mac when there is no mini. Nil keeps them off here. It must keep no
+    /// history of its own: Forget deletes only the recorder's files.
+    public var agentCommand: String?
     /// The overlay's global shortcuts; nil turns one off.
     public var overlayToggleKey: Shortcut? = Shortcut(keyCode: 42, modifiers: Shortcut.option)
     public var overlaySayKey: Shortcut? = Shortcut(keyCode: 36, modifiers: Shortcut.option)
@@ -79,9 +82,11 @@ public struct Settings: Sendable, Equatable {
     static let fields: [String: Kind] = [
         "ssh_host": .host, "storage_root": .root, "user_name": .text, "emails": .list, "calendars": .list, "domains": .list, "vault": .text,
         "meeting_apps": .list, "mic_apps": .list, "mic_order": .list, "retention_days": .days, "done_command": .text,
-        "calendar_collector": .text, "project_map": .text,
+        "agent_command": .text, "meeting_notes": .text, "calendar_collector": .text, "project_map": .text,
         "overlay_toggle_key": .shortcut, "overlay_say_key": .shortcut, "overlay_command": .text,
-        "screen_context": .flag
+        "screen_context": .flag,
+        // The mini's meeting notetaker reads it; the Mac only checks it is text.
+        "notetaker_notice": .text
     ]
 
     public init(toml text: String) throws {
@@ -97,6 +102,7 @@ public struct Settings: Sendable, Equatable {
             case ("mic_order", .array(let mics)): micOrder = mics.compactMap(\.string)
             case ("retention_days", .integer(let days)): retentionDays = days
             case ("done_command", .string(let command)): doneCommand = command
+            case ("agent_command", .string(let command)): agentCommand = command
             case ("overlay_toggle_key", .string(let text)): overlayToggleKey = Shortcut.parse(text) ?? nil
             case ("overlay_say_key", .string(let text)): overlaySayKey = Shortcut.parse(text) ?? nil
             case ("overlay_command", .string(let command)): overlayCommand = command

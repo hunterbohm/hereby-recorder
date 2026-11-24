@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:,">
+<!-- The bot shares the tab with this title: driver.mjs passes the same words to Chrome. -->
+<title>Hermes whiteboard</title>
+<style>
+  /* The meeting board: visual blocks that take the shape of what is said (blocks.css), at sizes that stay readable
+     when the call shrinks the share. Color means something: goals and pros green, risks and cons red, action items
+     neutral, numbers in the series colors, and violet only ever marks what Hermes just did. Atkinson Hyperlegible Next
+     (SIL Open Font License) from jsDelivr. */
+  @font-face { font-family: "Atkinson Next"; font-weight: 400; font-display: block;
+    src: url(https://cdn.jsdelivr.net/npm/@fontsource/atkinson-hyperlegible-next@5.2.7/files/atkinson-hyperlegible-next-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Atkinson Next"; font-weight: 600; font-display: block;
+    src: url(https://cdn.jsdelivr.net/npm/@fontsource/atkinson-hyperlegible-next@5.2.7/files/atkinson-hyperlegible-next-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Atkinson Next"; font-weight: 700; font-display: block;
+    src: url(https://cdn.jsdelivr.net/npm/@fontsource/atkinson-hyperlegible-next@5.2.7/files/atkinson-hyperlegible-next-latin-700-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Atkinson Next"; font-weight: 800; font-display: block;
+    src: url(https://cdn.jsdelivr.net/npm/@fontsource/atkinson-hyperlegible-next@5.2.7/files/atkinson-hyperlegible-next-latin-800-normal.woff2) format("woff2"); }
+  :root {
+    --ink: #17202a; --muted: #5a6572; --paper: #ffffff; --wash: #f3f5f7; --line: #dfe3e8;
+    --goal: #1d7448; --goal-wash: #e8f4ed; --risk: #b23a24; --risk-wash: #fbece8;
+    --act: #2b3440; --act-wash: #eef0f3; --note: #1f5f99; --note-wash: #eaf2fa;
+    --hermes: #6a45dc; --hermes-wash: #efeafe; --bar: #1b1f27; --bar-ink: #f3f4f6; --bar-muted: #b7bcc7;
+    --ok: #37b26c; --bad: #e5533d; --sev-high: #f6d2ca; --sev-med: #f3e3c4; --sev-med-ink: #8a5a00; --sev-low: #e2e6eb;
+    --strip: #e4e8ed; --strip-ink: #46505c; --strip-num: #cdd3da; --strip-rule: #c7cdd5;
+    --gutter: 36px;
+    font-family: "Atkinson Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink); }
+  body { overflow: hidden; -webkit-font-smoothing: antialiased; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+
+  #app { display: grid; grid-template-rows: auto minmax(0, 1fr) 64px; height: 100%; }
+  body.print #app { height: auto; grid-template-rows: auto; padding-bottom: 28px; }
+  body.print, html:has(body.print) { height: auto; overflow: visible; }
+  /* The board (or every board, or the empty board's ask) fills the middle row. */
+  #app > header { grid-row: 1; } #stage, #empty-board { grid-row: 2; } #status { grid-row: 3; }
+  body.print #stage { grid-row: 1; }
+
+  /* The tab strip, as in a browser: one tab a board, each with its number and name, on a grey strip. The board on screen
+     is the white tab joined to the white page below it, a step bigger than the rest; with two side by side, both are.
+     Sizes are for Meet, which shows the shared tab at about 70% and compresses it: nothing under 20px. */
+  #app > header { display: flex; align-items: flex-end; gap: 16px; padding: 10px var(--gutter) 0; min-width: 0; height: 70px;
+    background: var(--strip); }
+  .spacer { flex: 1; }
+  #tabs { display: flex; align-items: flex-end; min-width: 0; flex: 0 1 auto; height: 100%; padding-left: 4px; }
+  .tab { position: relative; display: flex; align-items: center; gap: 10px; height: 54px; min-width: 0; flex: 0 1 auto;
+    max-width: 300px; padding: 0 20px 0 14px; border: 0; border-radius: 14px 14px 0 0; background: transparent;
+    color: var(--strip-ink); font-size: 21px; font-weight: 700; line-height: 1; cursor: pointer; white-space: nowrap;
+    transition: background-color 200ms ease, color 200ms ease; }
+  /* A thin rule between two tabs that are not on screen, as in a browser. */
+  .tab:not(.on) + .tab:not(.on)::before { content: ""; position: absolute; left: -1px; top: 15px; bottom: 15px; width: 2px;
+    border-radius: 1px; background: var(--strip-rule); }
+  .tab .num { flex: none; display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0 6px; border-radius: 999px;
+    background: var(--strip-num); color: var(--ink); font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .tab .num svg { width: 15px; height: 15px; fill: currentColor; }
+  .tab .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; padding: 3px 0; }
+  .tab .name:empty { display: none; }
+  .tab.all { padding: 0 12px; }
+  #tabs.tight .tab:not(.on) { flex: none; padding: 0 12px; }
+  #tabs.tight .tab:not(.on) .name { display: none; }
+  .tab.on { flex: none; max-width: 520px; background: var(--paper); color: var(--ink); font-size: 26px; font-weight: 800;
+    letter-spacing: -0.01em; z-index: 1; }
+  .tab.on .num { background: var(--ink); color: #fff; }
+  /* The tab's foot curves out into the page on both sides, so tab and board read as one sheet. */
+  .tab.on::before, .tab.on::after { content: ""; position: absolute; bottom: 0; width: 14px; height: 14px; pointer-events: none; }
+  .tab.on::before { left: -14px; background: radial-gradient(circle at 0 0, transparent 13.5px, var(--paper) 14px); }
+  .tab.on::after { right: -14px; background: radial-gradient(circle at 100% 0, transparent 13.5px, var(--paper) 14px); }
+  .tab.entering { animation: tab-in 460ms cubic-bezier(.2, .8, .2, 1) both; }
+  body:not(.screen):not(.print) .tab:not(.on):hover { background: rgba(255, 255, 255, 0.55); }
+  body.screen .tab { cursor: default; }
+  #follow { flex: none; align-self: center; }
+  #share { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--muted); line-height: 1.25; flex: none;
+    align-self: center; }
+  #share b { color: var(--ink); font-weight: 700; display: block; }
+  #share svg { width: 52px; height: 52px; display: block; }
+  #share .short { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+
+  /* The boards on screen: one pane, or two side by side, each placing its blocks (blocks.css draws each one, arrange.mjs
+     places them) in the room it has; or every board small, in a grid. */
+  #stage { position: relative; min-height: 0; min-width: 0; margin: 18px var(--gutter) 16px; display: grid; gap: 0 28px;
+    grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  body.print #stage, #stage[data-mode="all"] { grid-template-rows: none; }
+  #stage[data-mode="split"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); margin-top: 12px; }
+  .pane { position: relative; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+  .pane .blocks { position: relative; min-height: 0; grid-row: 2; }
+  .pane-head { grid-row: 1; } .pane-empty { grid-row: 2; }
+  /* Alone, a board's name is its tab; side by side, each says its own, with a bar under it: dark under the one the next
+     change goes to ("Adding here"), light under the other. */
+  .pane-head { display: none; align-items: center; gap: 10px; min-width: 0; height: 48px; margin-bottom: 14px;
+    border-bottom: 4px solid var(--line); }
+  #stage[data-mode="split"] .pane-head { display: flex; }
+  .pane-head .num { flex: none; display: grid; place-items: center; min-width: 30px; height: 30px; border-radius: 999px;
+    background: var(--strip-num); font-size: 17px; font-weight: 800; }
+  .pane-name { margin: 0; min-width: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15;
+    color: var(--strip-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 8px; }
+  .pane-head .target { display: none; margin-left: auto; flex: none; align-items: center; gap: 8px; font-size: 18px;
+    font-weight: 800; color: #fff; background: var(--ink); border-radius: 999px; padding: 5px 14px 5px 12px; }
+  .pane-head .target::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); }
+  .pane.target .pane-head { border-bottom-color: var(--ink); }
+  .pane.target .pane-head .num { background: var(--ink); color: #fff; }
+  .pane.target .pane-name { color: var(--ink); }
+  .pane.target .pane-head .target { display: inline-flex; }
+  .pane-empty { margin: 8px 0 0; font-size: 22px; line-height: 1.35; color: var(--muted); }
+  /* Beside another board, the blocks that do not fit whole: their names and counts in a row at the foot (view.mjs). */
+  .folded { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; min-width: 0;
+    height: calc(var(--d, 1) * 44px); overflow: hidden; white-space: nowrap; font-size: calc(var(--d, 1) * 21px); }
+  .folded .also { flex: none; color: var(--muted); font-weight: 600; }
+  .folded.tight:not(.every) .also { display: none; }
+  /* No block fits the half: the names stand at the top, under how to see the board alone. */
+  .folded.every { top: 0; bottom: auto; height: auto; flex-wrap: wrap; align-content: flex-start; row-gap: 12px;
+    white-space: normal; }
+  .folded.every .also { flex: 0 0 100%; color: var(--ink); font-weight: 700; line-height: 1.3; }
+  .folded.every .fold { height: calc(var(--d, 1) * 44px); }
+  .fold { display: inline-flex; align-items: center; gap: 8px; min-width: 0; height: 100%; padding: 0 12px 0 14px;
+    border-radius: 10px; background: var(--wash); box-shadow: inset 0 0 0 2px var(--line); color: var(--ink); font-weight: 700;
+    flex: 0 1 auto; overflow: hidden; transition: box-shadow 300ms ease; }
+  .fold span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .fold b { flex: none; display: grid; place-items: center; min-width: 1.4em; height: 1.4em; padding: 0 0.3em; border-radius: 999px;
+    background: var(--strip-num); font-size: 0.82em; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .fold.new { box-shadow: inset 0 0 0 3px var(--who, var(--hermes)); }
+  .pane.from-right { animation: pane-right 380ms cubic-bezier(.2, .8, .2, 1) both; }
+  .pane.from-left { animation: pane-left 380ms cubic-bezier(.2, .8, .2, 1) both; }
+  /* The notes' picture: the board's title over its blocks, as tall as they need. */
+  body.print #stage { margin-top: 14px; }
+  body.print .pane-head { display: flex; border: 0; height: auto; margin-bottom: 14px; }
+  body.print .pane-head .num, body.print .pane-head .target { display: none; }
+  body.print .pane-name { font-size: 38px; color: var(--ink); }
+  body.print .blk-empty { display: none; }
+
+  /* Every board at once: each its picture under its number and name, the one the next change goes to outlined. */
+  #stage[data-mode="all"] { grid-template-columns: repeat(var(--columns, 2), minmax(0, 1fr)); gap: 20px; align-content: center;
+    justify-items: center; margin-top: 16px; }
+  .thumb { display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; padding: 0; border: 0;
+    background: transparent; text-align: left; font: inherit; color: inherit; }
+  button.thumb { cursor: pointer; }
+  .thumb-head { display: flex; align-items: center; gap: 10px; height: 36px; min-width: 0; font-size: 22px; font-weight: 800;
+    color: var(--ink); }
+  .thumb-head .num { flex: none; display: grid; place-items: center; min-width: 30px; height: 30px; border-radius: 999px;
+    background: var(--strip-num); font-size: 17px; }
+  .thumb.target .thumb-head .num { background: var(--ink); color: #fff; }
+  .thumb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thumb-frame { position: relative; display: block; overflow: hidden; border-radius: 12px; background: var(--paper);
+    box-shadow: 0 0 0 3px var(--line); }
+  .thumb.target .thumb-frame { box-shadow: 0 0 0 4px var(--ink); }
+  button.thumb:hover .thumb-frame { box-shadow: 0 0 0 4px var(--hermes); }
+  .thumb .mini { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }
+  .thumb-empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: 20px; color: var(--muted); }
+  #stage.zooming .thumb { animation: zoom-out 340ms cubic-bezier(.2, .8, .2, 1) both; }
+  body.editing .pane .blk [data-id], body.editing .pane .blk-title, body.editing .pane-name, body.editing .tab.on { cursor: pointer; }
+  body.editing .blk .row:hover, body.editing .blk .fnode:hover, body.editing .blk .chip:hover, body.editing .blk .stat:hover,
+  body.editing .blk .trow:not(.head):not(.total):hover, body.editing .blk-title:hover, body.editing .pane-name:hover {
+    outline: 2px solid rgba(106, 69, 220, 0.35); outline-offset: 2px; }
+
+  /* A board with nothing on it yet: what to say, with a few ways to start, each with the block it makes. */
+  #empty-board { display: grid; place-items: center; padding: 8px var(--gutter) 24px; min-height: 0; }
+  #empty-board .invite { display: flex; flex-direction: column; align-items: center; gap: 26px; max-width: 980px; }
+  #empty-board .lead { margin: 0; font-size: 34px; font-weight: 800; color: var(--ink); text-align: center; letter-spacing: -0.01em; }
+  #empty-board ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  #empty-board li { display: flex; align-items: center; gap: 16px; background: var(--wash); border-radius: 16px; padding: 16px 20px;
+    font-size: 22px; line-height: 1.25; color: var(--muted); }
+  #empty-board li q { quotes: "\201C" "\201D"; color: var(--ink); font-weight: 600; }
+  #empty-board li svg { width: 54px; height: 40px; flex: none; }
+
+  /* The status bar, docked at the bottom: what Hermes hears while someone speaks, then what changed, in words. */
+  #status { display: flex; align-items: center; gap: 16px; padding: 0 var(--gutter); background: var(--bar); color: var(--bar-ink);
+    position: relative; overflow: hidden; min-width: 0; }
+  #status .state { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 21px; white-space: nowrap; flex: none; }
+  #status .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--ok); flex: none; }
+  #status .what { font-size: 23px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #status .what q { color: #c9cdd6; quotes: "\201C" "\201D"; }
+  #status .hint { font-size: 17px; color: var(--bar-muted); white-space: nowrap; flex: none; }
+  #status kbd { font-family: inherit; color: #fff; background: #333a47; border-radius: 6px; padding: 3px 9px; }
+  #status[data-state="idle"] .dot { background: #5d6472; }
+  #status[data-state="hearing"] .dot, #status[data-state="heard"] .dot { background: var(--hermes); animation: pulse 900ms ease-in-out infinite; }
+  #status[data-state="drawing"] .dot { background: var(--hermes); border-radius: 3px; animation: spin 900ms linear infinite; }
+  #status[data-state="failed"] .dot { background: var(--bad); }
+  #status[data-state="off"] .dot { background: transparent; box-shadow: inset 0 0 0 3px var(--bad); }
+  #status[data-state="drawing"]::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 30%;
+    background: var(--hermes); animation: slide 1100ms ease-in-out infinite; }
+  #status .what.changed { animation: rise 260ms cubic-bezier(.2, .8, .2, 1); }
+  body.print #status, body.print #app > header { display: none !important; }
+  .glow { animation: glow 900ms ease; }
+
+  /* Hermes's cursor: an arrow with its name, parked beside what it changed so it never covers the words. */
+  #cursor { position: fixed; left: 0; top: 0; z-index: 30; pointer-events: none; opacity: 0;
+    transition: transform 380ms cubic-bezier(.2, .8, .2, 1), opacity 300ms ease; display: flex; align-items: flex-start; }
+  #cursor.on { opacity: 1; }
+  #cursor svg { width: 26px; height: 26px; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25)); }
+  #cursor span { margin: 18px 0 0 -4px; background: var(--hermes); color: #fff; font-size: 16px; font-weight: 700;
+    padding: 3px 9px; border-radius: 7px; white-space: nowrap; }
+  .pointer { position: fixed; left: 0; top: 0; z-index: 29; pointer-events: none; transition: transform 160ms ease, opacity 300ms ease;
+    display: flex; align-items: flex-start; }
+  .pointer svg { width: 20px; height: 20px; }
+  .pointer span { margin: 13px 0 0 -3px; color: #fff; font-size: 14px; font-weight: 700; padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+
+  #notice { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; z-index: 40;
+    background: var(--paper); color: var(--muted); font-size: 22px; text-align: center; padding: 16px; }
+
+  /* Changing the board from the link (never on the shared screen). */
+  #tools { display: flex; align-items: center; gap: 8px; flex: none; }
+  .btn { border: 1px solid var(--line); background: var(--paper); border-radius: 10px; padding: 7px 12px; font-size: 15px;
+    cursor: pointer; white-space: nowrap; }
+  .btn:hover { background: var(--wash); }
+  .btn.main { background: var(--hermes); border-color: var(--hermes); color: #fff; font-weight: 700; }
+  .btn.bad { color: var(--risk); }
+  .btn.quiet { border-color: transparent; background: transparent; color: var(--muted); }
+  .person-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+
+  #sheet-back { position: fixed; inset: 0; background: rgba(15, 20, 28, 0.28); z-index: 50; }
+  #sheet { position: fixed; z-index: 51; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(440px, calc(100vw - 24px));
+    background: var(--paper); border-radius: 18px; padding: 18px; box-shadow: 0 18px 48px rgba(0, 0, 0, 0.25);
+    display: flex; flex-direction: column; gap: 12px; font-size: 16px; max-height: calc(100vh - 24px); overflow: auto; }
+  #sheet h3 { margin: 0; font-size: 19px; }
+  #sheet label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 14px; font-weight: 600; }
+  #sheet input, #sheet textarea, #sheet select { font-size: 17px; color: var(--ink); padding: 9px 10px; border: 1px solid #c9cfd6;
+    border-radius: 10px; background: #fff; font-weight: 400; }
+  #sheet textarea { resize: vertical; min-height: 3.2em; }
+  #sheet .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #sheet .row-btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  #sheet .row-btns .left { margin-right: auto; }
+  #sheet .error { color: var(--risk); min-height: 0; }
+  #sheet .hint { margin: 0; color: var(--muted); font-size: 14px; }
+  #sheet fieldset.columns { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+  #sheet fieldset.columns legend { color: var(--muted); font-size: 14px; font-weight: 600; padding: 0 0 4px; }
+  #log { position: fixed; right: 16px; top: 76px; bottom: 80px; width: 340px; z-index: 45; background: var(--paper);
+    border-radius: 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2); padding: 14px 16px; overflow: auto; }
+  #log h3 { margin: 0 0 8px; font-size: 18px; display: flex; justify-content: space-between; align-items: center; }
+  #log ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  #log li { font-size: 15px; line-height: 1.35; }
+  #log li .who { font-weight: 700; }
+  #log li time { color: var(--muted); font-size: 13px; display: block; }
+  #toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 60; padding: 10px 16px; border-radius: 12px;
+    background: var(--bar); color: var(--bar-ink); font-size: 15px; max-width: calc(100vw - 32px); }
+
+  /* The link on a phone: blocks stacked, one a row, filling the width (view.mjs); the page scrolls, the bar smaller. */
+  @media (max-width: 760px) {
+    :root { --gutter: 14px; }
+    body:not(.screen) { overflow: auto; }
+    body:not(.screen) #app { height: auto; min-height: 100%; grid-template-rows: auto auto; align-content: start;
+      padding-bottom: 76px; }
+    #app > header { flex-wrap: wrap; gap: 8px 10px; padding-top: 10px; height: auto; }
+    .spacer { display: none; }
+    #tabs { flex: 1 1 100%; order: 2; overflow-x: auto; height: 50px; scrollbar-width: none; }
+    .tab { height: 44px; font-size: 16px; padding: 0 14px 0 10px; max-width: 180px; }
+    .tab.on { font-size: 18px; max-width: 260px; }
+    .tab .num { min-width: 24px; height: 24px; font-size: 14px; }
+    #tools, #follow { order: 1; margin-left: auto; flex-wrap: wrap; }
+    #stage[data-mode="split"] { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+    #stage[data-mode="all"] { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .pane-name { font-size: 21px; }
+    .thumb-head { font-size: 17px; }
+    #empty-board .lead { font-size: 24px; }
+    #empty-board ul { grid-template-columns: 1fr; }
+    #empty-board li { font-size: 17px; padding: 12px 14px; }
+    body:not(.screen) #status { position: fixed; left: 0; right: 0; bottom: 0; height: 60px; z-index: 20; gap: 10px;
+      padding-bottom: env(safe-area-inset-bottom); }
+    #status .state { font-size: 16px; } #status .what { font-size: 16px; } #status .hint { display: none; }
+    #sheet { left: 0; right: 0; top: auto; bottom: 0; transform: none; width: auto; border-radius: 18px 18px 0 0;
+      padding-bottom: calc(18px + env(safe-area-inset-bottom)); }
+    #log { left: 8px; right: 8px; width: auto; top: 64px; bottom: 72px; }
+    #toast { bottom: 72px; }
+  }
+
+  @keyframes glow { 30% { background: var(--hermes-wash); } }
+  @keyframes tab-in { from { max-width: 0; opacity: 0; transform: translateY(10px); padding-left: 0; padding-right: 0; } }
+  @keyframes pane-right { from { opacity: 0; transform: translateX(48px); } }
+  @keyframes pane-left { from { opacity: 0; transform: translateX(-48px); } }
+  @keyframes zoom-out { from { opacity: 0; transform: scale(1.06); } }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes pulse { 50% { transform: scale(1.35); opacity: 0.6; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes slide { from { left: -30%; } to { left: 100%; } }
+  @media (prefers-reduced-motion: reduce) {
+    #status .what.changed, .glow { animation: none !important; }
+    #status .dot, #status::after { animation: none !important; }
+    #cursor, .pointer { transition: opacity 200ms ease; }
+    .tab, .tab.entering, .pane.from-right, .pane.from-left, #stage.zooming .thumb { animation: none !important; transition: none !important; }
+  }
+</style>
+<link rel="stylesheet" href="/board/blocks.css">
+<script src="/board/env.js"></script>
+<!-- A real QR code for the board link (qrcode-generator, MIT), pinned with SRI. React and Excalidraw load only when a
+     board is exported to the notes (canvas.mjs). -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.5.2/qrcode.js"
+  integrity="sha384-8FWZA6BGMXhsfO+BLtrJK0We6gg5o1JyO8xQm6peWDEUs17ACA5ziE/NIAkl9z2k" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <nav id="tabs" aria-label="Boards"></nav>
+    <div class="spacer"></div>
+    <button id="follow" class="btn quiet" type="button" hidden title="Show the boards as they are on the shared screen">Follow the screen</button>
+    <div id="tools" hidden>
+      <button id="add-block" class="btn" type="button" title="Add a block to this board">+ Block</button>
+      <button id="undo" class="btn" type="button" title="Take back the last change">Undo</button>
+      <button id="changes" class="btn quiet" type="button">Changes</button>
+      <button id="me" class="btn quiet" type="button" title="Your name, shown to the others"></button>
+    </div>
+    <div id="share" hidden><svg id="qr" viewBox="0 0 29 29" role="img" aria-label="QR code for the board link"></svg>
+      <div><b>Edit on your phone</b><span class="short"></span></div></div>
+  </header>
+  <main id="stage" hidden></main>
+  <div id="empty-board" hidden>
+    <div class="invite">
+      <p class="lead"></p>
+      <ul>
+        <li><svg viewBox="0 0 54 40" aria-hidden="true"><rect x="2" y="4" width="50" height="9" rx="3" fill="#e8f4ed"/><rect x="2" y="16" width="50" height="9" rx="3" fill="#e8f4ed"/><rect x="2" y="28" width="34" height="9" rx="3" fill="#e8f4ed"/><rect x="2" y="4" width="4" height="9" rx="2" fill="#1d7448"/><rect x="2" y="16" width="4" height="9" rx="2" fill="#1d7448"/><rect x="2" y="28" width="4" height="9" rx="2" fill="#1d7448"/></svg>
+          <span><q>Hermes, our goal is ten paying pilots</q></span></li>
+        <li><svg viewBox="0 0 54 40" aria-hidden="true"><rect x="4" y="22" width="10" height="16" rx="3" fill="#2a78d6"/><rect x="22" y="12" width="10" height="26" rx="3" fill="#2a78d6"/><rect x="40" y="3" width="10" height="35" rx="3" fill="#2a78d6"/></svg>
+          <span><q>Hermes, chart signups: 120 in May, 180 in June</q></span></li>
+        <li><svg viewBox="0 0 54 40" aria-hidden="true"><rect x="1" y="13" width="14" height="14" rx="4" fill="#17202a"/><rect x="20" y="13" width="14" height="14" rx="4" fill="#17202a"/><rect x="39" y="13" width="14" height="14" rx="4" fill="#17202a"/><path d="M15 20h5M34 20h5" stroke="#8a94a0" stroke-width="3"/></svg>
+          <span><q>Hermes, map how an order ships</q></span></li>
+        <li><svg viewBox="0 0 54 40" aria-hidden="true"><rect x="2" y="3" width="50" height="10" rx="3" fill="#e3eefc"/><rect x="2" y="16" width="50" height="10" rx="3" fill="#b7d3f6"/><rect x="2" y="29" width="50" height="10" rx="3" fill="#3987e5"/></svg>
+          <span><q>Hermes, compare Priya and Sam on design</q></span></li>
+      </ul>
+    </div>
+  </div>
+  <footer id="status" data-state="idle" aria-live="polite">
+    <span class="state"><span class="dot"></span><span class="label"></span></span>
+    <span class="what"></span>
+    <span class="hint"></span>
+  </footer>
+</div>
+<div id="cursor" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 2l17 9.5-7.3 1.6L9.5 21z" fill="#6a45dc" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg><span>Hermes</span></div>
+<div id="pointers" aria-hidden="true"></div>
+<div id="notice"></div>
+<div id="sheet-back" hidden></div>
+<form id="sheet" hidden novalidate></form>
+<aside id="log" hidden><h3>Changes <button class="btn quiet" type="button" id="log-close">Close</button></h3><ol></ol></aside>
+<div id="toast" role="status" hidden></div>
+<script type="module" src="/board/board.mjs"></script>
+</body>
+</html>

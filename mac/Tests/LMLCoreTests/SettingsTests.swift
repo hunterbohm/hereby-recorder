@@ -37,6 +37,10 @@ struct SettingsFileTests {
         #expect(settings.retentionDays == 14)
         #expect(settings.screenContext)
     }
+    @Test func theMiniSideKeysAreAcceptedForTheHelpersToRead() throws {
+        #expect(try Settings(toml: "agent_command = 'claude -p --no-session-persistence --tools \"\"'\n").agentCommand == "claude -p --no-session-persistence --tools \"\"")
+        #expect(try Settings(toml: "meeting_notes = \"~/Notes/Meetings\"\n") == Settings())
+    }
     @Test func screenContextIsOnUnlessTurnedOffAndMustBeTrueOrFalse() throws {
         #expect(Settings().screenContext)
         #expect(try Settings(toml: "screen_context = false").screenContext == false)
@@ -68,6 +72,8 @@ struct SettingsFileTests {
         ("mic_order = \"Shure\"", "mic_order", "must be a list of strings"),
         ("emails = [\"a@example.com\", 3]", "emails", "must be a list of strings"),
         ("user_name = \"  \"", "user_name", "must be a string"),
+        ("agent_command = [\"claude\"]", "agent_command", "must be a string"),
+        ("meeting_notes = 3", "meeting_notes", "must be a string"),
         ("retention_day = 14", "retention_day", "is not a setting"),
         ("retention_days = 7\nretention_days = 8", "retention_days", "is set twice"),
     ])
@@ -122,7 +128,7 @@ struct SettingsUseTests {
         #expect(new.arguments.contains("ControlPath=\"\(root.path)/ssh-studio\""))
         #expect(after.shellRoot(test: true) == "/srv/meetings-test")
     }
-    @Test func withoutAMiniTheOutboxSendsNothingAndAskFails() async throws {
+    @Test func withoutAMiniTheOutboxSendsNothingAndAskRunsOnThisMac() async throws {
         let root = try temporary(); defer { try? FileManager.default.removeItem(at: root) }
         let paths = SessionPaths(root: root)
         let directory = paths.session("20261013-190012-a3f1")
@@ -138,7 +144,16 @@ struct SettingsUseTests {
         try await outbox.tick(at: epoch)
         #expect(await runner.recorded().isEmpty)
         #expect(!FileManager.default.fileExists(atPath: directory.path))
-        await #expect(throws: RecorderError(reply: "no_mini")) { _ = try await ControlActions(paths: paths, mini: nil, runner: runner).ask("anything") }
+        let checkout = root.appendingPathComponent("repo"), script = checkout.appendingPathComponent("mini/live-meeting-ask")
+        try PrivateFiles.directory(script.deletingLastPathComponent())
+        try Data("#!/usr/bin/env python3\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+        let helpers = try #require(MeetingHelpers.resolve(try Settings(toml: "agent_command = \"claude -p --no-session-persistence\"\n"), paths: paths, executable: checkout.appendingPathComponent("mac/.build/debug/lml")))
+        let asking = StubRunner([0], stdout: Data("Friday.\n".utf8))
+        #expect(try await ControlActions(paths: paths, helpers: helpers, runner: asking).ask("anything") == "Friday.")
+        let command = try #require(await asking.recorded().first)
+        #expect(command.executable == "/usr/bin/env" && !command.arguments.contains("/usr/bin/ssh"))
+        #expect(command.arguments.contains("LML_ROOT=\(root.path)") && command.arguments.last == script.resolvingSymlinksInPath().path)
     }
     @Test func theDetectorWatchesOnlyTheListedApps() {
         var detector = Detector(ownPID: 1, clients: MeetingClients(prefixes: ["com.apple.FaceTime"]))

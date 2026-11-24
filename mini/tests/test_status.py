@@ -185,7 +185,7 @@ def test_filed_note_from_registry_then_session_marker_then_calendar_match(paths,
 def test_unfiled_capture_is_titled_by_calendar_match_and_has_no_note(paths, now):
     ended(paths, now, minutes_ago=80, length=40)
     note(paths, '2026-10-13 0800 Cancelled.md', '2026-10-13T08:00:00-05:00', '2026-10-13T09:00:00-05:00',
-         extra='tags:\n  - meeting/cancelled\n')
+         extra='status: canceled\n')
     note(paths, '2026-10-13 0630 Ran late.md', '2026-10-13T06:30:00-05:00', '2026-10-13T07:00:00-05:00')
     note(paths, '2026-10-13 0745 Kim call.md', '2026-10-13T07:45:00-05:00', '2026-10-13T08:15:00-05:00')
     [recent] = feed(paths, now)['recent']

@@ -17,15 +17,7 @@ public struct DoneCommand: Sendable, Equatable {
 
     /// The handoff script beside the checkout this binary was built in, or in the app's Resources.
     public static func locateHandoff(executable: URL, fileManager: FileManager = .default) -> URL? {
-        var directory = executable.resolvingSymlinksInPath().deletingLastPathComponent()
-        for _ in 0..<8 {
-            for candidate in ["handoff/\(handoffName)", "Resources/\(handoffName)"] {
-                let script = directory.appendingPathComponent(candidate)
-                if fileManager.isExecutableFile(atPath: script.path) { return script }
-            }
-            directory.deleteLastPathComponent()
-        }
-        return nil
+        locateBeside(executable: executable, ["handoff/\(handoffName)", "Resources/\(handoffName)"], fileManager: fileManager)
     }
 
     /// The setting if there is one, else the handoff script. Nil when there is no setting and no script to be found.
@@ -37,6 +29,19 @@ public struct DoneCommand: Sendable, Equatable {
     public func process(session: URL, timeout: TimeInterval) -> ProcessCommand {
         ProcessCommand("/usr/bin/env", words.map { $0.replacingOccurrences(of: "{session}", with: session.path) }, timeout: timeout)
     }
+}
+
+/// The first of `candidates` that is executable, looked for in each folder above `executable`.
+func locateBeside(executable: URL, _ candidates: [String], fileManager: FileManager) -> URL? {
+    var directory = executable.resolvingSymlinksInPath().deletingLastPathComponent()
+    for _ in 0..<8 {
+        for candidate in candidates {
+            let file = directory.appendingPathComponent(candidate)
+            if fileManager.isExecutableFile(atPath: file.path) { return file }
+        }
+        directory.deleteLastPathComponent()
+    }
+    return nil
 }
 
 /// Splits a command line the way a shell does for quotes and backslashes, with no expansion.

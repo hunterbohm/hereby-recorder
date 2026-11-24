@@ -428,9 +428,14 @@ public enum PanelLinks {
         return url
     }
 
-    /// Hermes joins Google Meet calls only.
-    public static func isMeet(_ string: String?) -> Bool {
-        string.flatMap(url).flatMap(platform) == "Google Meet"
+    /// Hermes joins Google Meet calls, and Zoom calls whose link carries a meeting number (not a personal link).
+    public static func hermesCanJoin(_ string: String?) -> Bool {
+        guard let url = string.flatMap(url) else { return false }
+        switch platform(url) {
+        case "Google Meet": return true
+        case "Zoom": return url.path().range(of: #"^/[jw]/[0-9]{9,12}(/|$)"#, options: .regularExpression) != nil
+        default: return false
+        }
     }
 
     public static func platform(_ url: URL) -> String? {

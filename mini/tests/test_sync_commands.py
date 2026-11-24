@@ -267,6 +267,13 @@ def test_ask_without_a_question_exits_2(stdin):
     assert (result.returncode, result.stdout) == (2, b'')
 
 
+@pytest.mark.parametrize('command', ['live-meeting-ask', 'live-meeting-quick'])
+def test_an_old_python_gets_one_line_instead_of_a_traceback(command):
+    old = f'import sys; sys.version_info = (3, 9, 6); sys.argv = [{str(MINI / command)!r}]; exec(open(sys.argv[0]).read())'
+    result = subprocess.run([sys.executable, '-c', old], input=b'q', capture_output=True, timeout=20)
+    assert (result.returncode, result.stdout, result.stderr) == (1, b'', f'{command} needs Python 3.11 or newer.\n'.encode())
+
+
 def snapshot(path):
     return {str(p.relative_to(path)): (p.stat().st_size, p.stat().st_mtime_ns) for p in sorted(path.rglob('*'))}
 
@@ -463,7 +470,7 @@ def test_install_links_commands_and_converges_the_hermes_job(fake_home):
                    'skills': ['meeting-processing'], 'script': 'listener-watch.sh', 'no_agent': False,
                    'enabled_toolsets': ['terminal', 'file', 'skills']}
     tick = dict(by_name['meeting-bot-tick'])
-    assert tick == {'name': 'meeting-bot-tick', 'schedule': 'every 1m', 'deliver': 'photon', 'failure_deliver': 'local',
+    assert tick == {'name': 'meeting-bot-tick', 'schedule': '* * * * *', 'deliver': 'photon', 'failure_deliver': 'local',
                     'script': 'meeting-bot-tick.sh', 'no_agent': True}
     assert (home / '.hermes/scripts/meeting-bot-tick.sh').read_bytes() == (MINI / 'hermes-meeting-bot-tick.sh').read_bytes()
     assert "'edit'" in install('--dry-run')

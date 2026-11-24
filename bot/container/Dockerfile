@@ -7,7 +7,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY package.json ./
 RUN npm install --omit=dev && chown -R node:node /app
-COPY --chown=node:node driver.mjs start.sh ./
+COPY --chown=node:node driver.mjs voice.mjs board-link.mjs notice.mjs tile.mjs zoom-ui.mjs start.sh ./
 USER node
 ENV DISPLAY=:99 HOME=/home/node
 EXPOSE 8080
