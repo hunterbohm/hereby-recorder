@@ -15,6 +15,8 @@ public final class FakeRecorder: RecorderModel, RecorderActions {
         case hermesOptIn(String)
         case hermesOptOut(String)
         case hermesChat(String, Bool)
+        case requestAccess(Permission)
+        case restart
     }
 
     private struct State {
@@ -115,6 +117,8 @@ public final class FakeRecorder: RecorderModel, RecorderActions {
     public func hermesOptIn(key: String) async throws { try await enter(.hermesOptIn(key)) }
     public func hermesOptOut(key: String) async throws { try await enter(.hermesOptOut(key)) }
     public func hermesChat(key: String, on: Bool) async throws { try await enter(.hermesChat(key, on)) }
+    public func requestAccess(_ permission: Permission) async { try? await enter(.requestAccess(permission)) }
+    public func restart() async throws { try await enter(.restart) }
 
     private func enter(_ call: Call, record: Bool = true) async throws {
         let holding = state.withLock { state in

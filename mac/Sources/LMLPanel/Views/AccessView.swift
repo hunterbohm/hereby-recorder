@@ -33,7 +33,11 @@ struct AccessView: View {
             .accessibilityElement(children: .combine)
         } footer: {
             HStack {
-                if let url = copy.settingsURL {
+                if !store.snapshot.access.ready {
+                    Button("Set up access") { store.showSetup() }
+                        .buttonStyle(PanelButtonStyle(kind: .primary))
+                        .keyboardShortcut(.defaultAction)
+                } else if let url = copy.settingsURL {
                     Button("Open System Settings") { store.open(url) }
                         .buttonStyle(PanelButtonStyle(kind: .primary))
                         .keyboardShortcut(.defaultAction)

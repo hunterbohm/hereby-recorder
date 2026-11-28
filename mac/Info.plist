@@ -2,7 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>sh.hereby.recorder</string>
-<key>CFBundleName</key><string>LiveMeetingListener</string>
+<key>CFBundleName</key><string>Hereby</string>
+<!-- macOS names an app by its file name unless this matches the file name, and then shows the localized name from
+     en.lproj/InfoPlist.strings, "Hereby". The file stays LiveMeetingListener.app: the LaunchAgent, the updater and the
+     install scripts find the app by that path. -->
+<key>CFBundleDisplayName</key><string>LiveMeetingListener</string>
+<key>LSHasLocalizedDisplayName</key><true/>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleExecutable</key><string>lml</string>
 <key>CFBundlePackageType</key><string>APPL</string>

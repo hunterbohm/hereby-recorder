@@ -16,22 +16,34 @@ You are responsible for telling people they are being recorded. Many places requ
 ## Requirements
 
 - A Mac running macOS 26 or later.
-- Xcode or the Xcode Command Line Tools with Swift 6, `git`, `openssl`, and `python3` (all ship with the Command Line Tools). Install the tools with `xcode-select --install`.
+- To build it yourself instead of downloading it: Xcode or the Xcode Command Line Tools with Swift 6, `git`, `openssl`, and `python3` (all ship with the Command Line Tools). Install the tools with `xcode-select --install`.
+- The downloaded app needs no developer tools, except that Ask and the live buttons, with no second machine set, run small Python helpers, which need `python3` from the Command Line Tools.
 - Optional: a second machine you can reach with `ssh`, where meetings sync. Without one, meetings stay on the Mac, which is the default.
+
+## Download the app
+
+Each release on this repository's Releases page has `LiveMeetingListener-vX.Y.Z.zip`: the app, signed with a Developer ID and notarized by Apple, so it opens without a warning.
+
+1. Download the zip and open it. Make the folder `Applications` in your home folder if it is not there, and move `LiveMeetingListener.app` into it, so it is at `~/Applications/LiveMeetingListener.app`. Finder and System Settings show it as Hereby.
+2. Run `~/Applications/LiveMeetingListener.app/Contents/Resources/scripts/install.sh`. It writes the two LaunchAgents (`sh.hereby.recorder` and `sh.hereby.recorder.mic`) to `~/Library/LaunchAgents`, installs the mic helper, and prints the `launchctl bootstrap` command that starts the recorder. It starts nothing itself.
+3. Run the printed command, then grant the permissions below when macOS asks.
+
+The app updates itself from then on (see Update it).
 
 ## Permissions
 
-macOS asks for these the first time they are needed. Grant them in System Settings > Privacy & Security.
+When one the recorder needs is missing, it opens a small setup window by itself, with one Allow button per permission. Each button asks macOS as the recorder, so the app appears in System Settings > Privacy & Security, and each row turns on the moment the grant lands.
 
 - Microphone, to hear you.
 - System audio recording, to hear the other side of the call.
+- Screen Recording, optional, so quick answers can see your screen (see below).
 - Full Disk Access, only for the optional iPhone call importer in `import/`.
 
 Run `lml doctor` from the built app to see which are missing.
 
-## Build and sign it locally
+## Or build and sign it locally
 
-The app is built and signed on your Mac. You or your own agent run these steps from a clean clone. Nothing here needs an Apple developer account: the signing certificate is a local self-signed one that `mac/scripts/sign.sh` makes once, so macOS keeps your permission grants across rebuilds.
+Instead of downloading it, you can build and sign the app on your Mac. You or your own agent run these steps from a clean clone. Nothing here needs an Apple developer account: the signing certificate is a local self-signed one that `mac/scripts/sign.sh` makes once, so macOS keeps your permission grants across rebuilds.
 
 ```sh
 git clone <this repository> hereby-recorder
@@ -50,11 +62,14 @@ Check the build with `~/Applications/LiveMeetingListener.app/Contents/MacOS/lml 
 
 ## Update it
 
-The app remembers the folder you built it from. About once a day it asks the place you cloned it from whether a newer release is out. When one is, the menu bar panel shows "Update to v2.14.0" at the bottom of its list. Nothing pops up.
+About once a day the app checks for a newer release. When one is out, the menu bar panel shows "Update to v2.14.0" at the bottom of its list. Nothing pops up. Click it when you are not on a call; it will not start during one.
 
-Click it when you are not on a call. It downloads the release into the same folder, builds it, and restarts the recorder, all in the background, in a few minutes. It will not start during a call, if you changed files in that folder, or if the folder is not on a release (for example, you are working on a branch). The panel says which. If the build fails, the panel shows where its log is: `~/Library/Application Support/LiveMeetingListener/update/update.log`.
+- **A downloaded app** fetches the new release's zip, checks it is signed with the app's update key and by the same developer, and that Apple notarized it, then swaps it in and restarts the recorder. Permissions carry over, because every release has the same identity.
+- **An app you built** remembers the folder you built it from and asks the place you cloned it from. The update downloads the release into that folder, builds it, and restarts the recorder. It will not start if you changed files in that folder, or if the folder is not on a release (for example, you are working on a branch). To update by hand instead, run `git fetch --tags`, `git checkout` the new tag, then `mac/scripts/build-app.sh`.
 
-To update by hand instead, run the same steps from the folder: `git fetch --tags`, `git checkout` the new tag, then `mac/scripts/build-app.sh`.
+The panel says why when it will not start. If an update fails, the panel shows where its log is: `~/Library/Application Support/LiveMeetingListener/update/update.log`.
+
+Releases are made with `mac/scripts/release.sh`; `mac/RELEASING.md` has the one-time setup.
 
 ## Settings
 
@@ -69,7 +84,7 @@ The call overlay floats above every window, so a tiler leaves it alone. Two sett
 
 ### Reading the screen
 
-During a call, every question in the overlay also sends a picture of the screen under the pointer, with the overlay left out, so answers can use a shared slide or the doc you have open. The Read screen button asks about the screen itself. It needs Screen Recording for LiveMeetingListener in System Settings. Set `screen_context = false` to send the screen only when you press Read screen.
+During a call, every question in the overlay also sends a picture of the screen under the pointer, with the overlay left out, so answers can use a shared slide or the doc you have open. The Read screen button asks about the screen itself. It needs Screen Recording for Hereby in System Settings. Set `screen_context = false` to send the screen only when you press Read screen.
 
 ## When a meeting ends
 

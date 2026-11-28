@@ -69,6 +69,11 @@ public final class PanelStore {
     public private(set) var hermesPending: Set<String> = []
     /// A newer release of the app and where updating to it stands.
     public private(set) var update: UpdateNotice?
+    /// The setup window is up: it opens itself when a permission a call needs is missing (see Setup in STATES.md).
+    public private(set) var setupShown = false
+    /// Permissions whose macOS prompt is up, from Allow until the prompt is answered.
+    public private(set) var asking: Set<Permission> = []
+    public private(set) var restarting = false
 
     @ObservationIgnored private var graceStart: Date
     @ObservationIgnored public let hasMini: Bool
@@ -79,6 +84,8 @@ public final class PanelStore {
     @ObservationIgnored private var actionToken: UUID?
     @ObservationIgnored private let updates: (any UpdateActions)?
     @ObservationIgnored private let updatePoll: Duration
+    /// A permission went missing during a call: the setup waits for the call to end.
+    @ObservationIgnored private var setupPending = false
 
     public init(snapshot: RecorderSnapshot, actions: any RecorderActions,
                 clock: @escaping @MainActor () -> Date = { Date() },
@@ -99,6 +106,7 @@ public final class PanelStore {
         now = start
         graceStart = start
         remember(previous: snapshot, next: snapshot)
+        if !snapshot.access.ready { wantSetup() }
     }
 
     public var health: Health { Health.resolve(snapshot, now: now, graceStart: graceStart, hasMini: hasMini) }
@@ -139,6 +147,15 @@ public final class PanelStore {
             focus = focus.back
         }
         settle(after: subject)
+        if previous.access.ready, !next.access.ready {
+            wantSetup()
+        } else if setupPending, !inCall {
+            setupPending = false
+            if !next.access.ready { setupShown = true }
+        }
+        if previous.access.microphone != next.access.microphone { asking.remove(.microphone) }
+        if previous.access.systemAudio != next.access.systemAudio { asking.remove(.systemAudio) }
+        if previous.access.screen != next.access.screen { asking.remove(.screen) }
         if let before = previous.feed {
             let filedBefore = Set(before.recent.filter { $0.state == .filed }.map(\.sid))
             if next.feed?.recent.contains(where: { $0.state == .filed && !filedBefore.contains($0.sid) }) == true {
@@ -383,6 +400,42 @@ public final class PanelStore {
     }
 
     public func open(_ url: URL) { openURL(url) }
+
+    // MARK: Setup
+
+    public func showSetup() { setupShown = true }
+
+    public func dismissSetup() {
+        setupShown = false
+        setupPending = false
+    }
+
+    private func wantSetup() {
+        if inCall { setupPending = true } else { setupShown = true }
+    }
+
+    /// The one action a setup row offers: ask macOS when it never asked (the app is listed in System Settings from
+    /// then on), open the right System Settings pane once it was turned down, restart once it's allowed but not live.
+    public func fixAccess(_ permission: Permission) async {
+        switch snapshot.access[permission] {
+        case .notAsked?:
+            guard asking.insert(permission).inserted else { return }
+            await actions.requestAccess(permission)
+            asking.remove(permission)
+        case .denied?:
+            open(PanelCopy.settingsURL(permission))
+            await actions.requestAccess(permission)
+        case .restart?:
+            guard !inCall, !restarting else { return }
+            restarting = true
+            do { try await actions.restart() } catch { restarting = false }
+        case .granted?, nil:
+            break
+        }
+    }
+
+    /// Restarting stops the recorder, so it waits for any call, as an update does.
+    public var canRestart: Bool { !inCall }
 
     public func navigate(_ next: PanelFocus) {
         focus = next

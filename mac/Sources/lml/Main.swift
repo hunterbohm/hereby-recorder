@@ -25,8 +25,11 @@ struct UsageError: Error {}
         dispatchMain()
     }
     @MainActor static func presentPanel(model: any RecorderModel, actions: any RecorderActions, settings: Settings) {
-        // Only an app that build-app.sh stamped with its clone and a release tag offers updates.
-        let updates = UpdateCheckout(info: Bundle.main.infoDictionary).map { Updater(checkout: $0, root: SessionPaths().root) }
+        // A signed release (stamped by release.sh) downloads signed updates; a source build that build-app.sh stamped with
+        // its clone and a release tag rebuilds from that clone; any other build offers none.
+        let info = Bundle.main.infoDictionary, root = SessionPaths().root
+        let updates: (any UpdateActions)? = ReleaseChannel(info: info, app: Bundle.main.bundleURL).map { ReleaseUpdater(channel: $0, root: root) }
+            ?? UpdateCheckout(info: info).map { Updater(checkout: $0, root: root) }
         PanelHost.start(model: model, actions: actions, hasMini: settings.mini != nil, overlay: OverlayOptions(settings), updates: updates)
     }
     @MainActor static func outcome(_ args: [String]) async -> Int32 {
@@ -126,12 +129,11 @@ struct UsageError: Error {}
             try await doctor(configURL: configURL, settings: try settings(settingsURL), settingsURL: settingsURL)
         case "request-permissions":
             guard args.count == 1 else { throw UsageError() }
-            let granted = await AVCaptureDevice.requestAccess(for: .audio)
-            print("microphone \(granted ? "granted" : "denied")")
+            // From a terminal macOS files these under the terminal; the recorder's own setup window asks as the app.
             let config = FileManager.default.fileExists(atPath: configURL.path) ? try JSON.read(Config.self, from: configURL) : Config()
-            let source: any SystemAudioSource = config.system_audio == .tap ? TapSource(clock: CaptureClock(), sink: { _ in }) : SCKSource(clock: CaptureClock(), sink: { _ in })
-            try await source.start(); try await Task.sleep(for: .seconds(2)); await source.stop()
-            print("\(config.system_audio.rawValue) permission request complete; run doctor while output is active")
+            for permission in [Permission.microphone, .systemAudio] { await CapturePermissions.ask(permission, backend: config.system_audio) }
+            let access = CapturePermissions.state(config.system_audio, screenContext: false)
+            print("microphone \(access.microphone.rawValue) system-audio \(access.systemAudio.rawValue)")
         case "transcribe-file":
             guard args.count >= 2, args.count % 2 == 0 else { throw UsageError() }
             var channel = Channel.them, vocabulary: [String] = []

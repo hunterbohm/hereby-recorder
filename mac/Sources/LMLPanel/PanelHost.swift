@@ -43,6 +43,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
     private var outsideClickMonitor: Any?
     private var anchor: NSPanel?
     private var updateTimer: Timer?
+    private var setup: SetupWindow?
 
     init(model: any RecorderModel, actions: any RecorderActions, hasMini: Bool, overlay options: OverlayOptions,
          updates: (any UpdateActions)?) {
@@ -62,6 +63,7 @@ final class StatusController: NSObject, NSPopoverDelegate {
         hotkey = Hotkey { Task { await store.markMoment() } }
         store.shortcutAvailable = hotkey != nil
         overlay = OverlayController(store: store, options: options)
+        setup = SetupWindow(store: store)
         model.observe { [weak self] snapshot in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.store.update(snapshot) } }
         }
@@ -150,4 +152,73 @@ final class StatusController: NSObject, NSPopoverDelegate {
         RunLoop.main.add(next, forMode: .common)
         timer = next
     }
+}
+
+/// The setup window (STATES.md, Setup): a small floating sheet at the top right, so it stays in view beside System
+/// Settings while the user flips a switch there. It opens and closes with `PanelStore.setupShown`, and closes itself a
+/// moment after everything it shows is on.
+@MainActor
+final class SetupWindow: NSObject, NSWindowDelegate {
+    static let closeAfter: TimeInterval = 2.5
+    private let store: PanelStore
+    private var window: NSPanel?
+
+    init(store: PanelStore) {
+        self.store = store
+        super.init()
+        track()
+    }
+
+    private func track() {
+        withObservationTracking {
+            let shown = store.setupShown, complete = store.snapshot.access.complete
+            shown ? show() : window?.orderOut(nil)
+            if shown, complete { closeSoon() }
+        } onChange: { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.track() } }
+        }
+    }
+
+    private func closeSoon() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.closeAfter) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let store = self?.store, store.snapshot.access.complete else { return }
+                store.dismissSetup()
+            }
+        }
+    }
+
+    private func show() {
+        if window?.isVisible == true { return }
+        let window = self.window ?? make()
+        self.window = window
+        if let screen = NSScreen.main {
+            let size = window.frame.size, area = screen.visibleFrame
+            window.setFrameTopLeftPoint(CGPoint(x: area.maxX - size.width - 16, y: area.maxY - 12))
+        }
+        window.orderFrontRegardless()
+    }
+
+    private func make() -> NSPanel {
+        let window = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: true)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.title = "Hereby setup"
+        window.isMovableByWindowBackground = true
+        window.level = .floating
+        window.hidesOnDeactivate = false
+        window.isReleasedWhenClosed = false
+        window.sharingType = .none
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        let host = NSHostingController(rootView: SetupView(store: store))
+        host.sizingOptions = .preferredContentSize
+        window.contentViewController = host
+        window.setContentSize(host.view.fittingSize)
+        window.delegate = self
+        return window
+    }
+
+    func windowWillClose(_ notification: Notification) { store.dismissSetup() }
 }

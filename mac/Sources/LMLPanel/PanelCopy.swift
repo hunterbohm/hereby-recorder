@@ -26,7 +26,7 @@ public enum PanelCopy {
     }
 
     /// Read screen's answer when the recorder can't take a picture of the screen.
-    public static let noScreen = "Hereby can't see your screen. Turn on Screen Recording for LiveMeetingListener in System Settings › Privacy & Security, then try again."
+    public static let noScreen = "Hereby can't see your screen. Turn on Screen Recording for Hereby in System Settings › Privacy & Security, then try again."
 
     static let privacy = "x-apple.systempreferences:com.apple.preference.security?"
 

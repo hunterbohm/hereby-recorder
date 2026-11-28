@@ -1,3 +1,4 @@
+import json
 import os
 import plistlib
 import shutil
@@ -47,9 +48,11 @@ def box(tmp_path):
     (package / 'mac' / 'scripts').mkdir(parents=True)
     (package / 'handoff').mkdir()
     (package / 'mini').mkdir()
-    shutil.copy(REPO / 'mac' / 'scripts' / 'build-app.sh', package / 'mac' / 'scripts' / 'build-app.sh')
+    for script in ('build-app.sh', 'assemble-app.sh', 'install-app.sh'):
+        shutil.copy(REPO / 'mac' / 'scripts' / script, package / 'mac' / 'scripts' / script)
     shutil.copy(REPO / 'mac' / 'Info.plist', package / 'mac' / 'Info.plist')
     shutil.copy(REPO / 'mac' / 'AppIcon.icns', package / 'mac' / 'AppIcon.icns')
+    shutil.copytree(REPO / 'mac' / 'en.lproj', package / 'mac' / 'en.lproj')
     (package / 'mac' / 'scripts' / 'sign.sh').write_text('#!/bin/sh\nexit 0\n')
     (package / 'handoff' / 'hereby-handoff.sh').write_text('#!/bin/sh\nexit 0\n')
     for name in ('live-meeting-ask', 'live-meeting-quick', 'live_quick.py'):
@@ -225,3 +228,75 @@ def test_the_app_records_the_clone_it_was_built_from(box):
     info = plistlib.loads((box / 'Apps' / 'LiveMeetingListener.app' / 'Contents' / 'Info.plist').read_bytes())
     assert os.path.realpath(info['HerebyCheckout']) == os.path.realpath(box / 'pkg')
     assert info['CFBundleShortVersionString'] == 'v0.0.1'
+
+
+def test_the_app_shows_as_hereby_while_its_file_keeps_its_name(box):
+    result = build(box)
+    assert result.returncode == 0, result.stderr
+    app = box / 'Apps' / 'LiveMeetingListener.app'
+    info = plistlib.loads((app / 'Contents' / 'Info.plist').read_bytes())
+    # macOS shows the localized name only while the plain display name matches the file name; otherwise the file name.
+    assert info['CFBundleDisplayName'] == app.stem and info['LSHasLocalizedDisplayName'] is True
+    assert info['CFBundleName'] == 'Hereby'
+    strings = subprocess.run(['plutil', '-convert', 'json', '-o', '-', app / 'Contents' / 'Resources' / 'en.lproj' / 'InfoPlist.strings'],
+                             capture_output=True, text=True, check=True)
+    assert json.loads(strings.stdout) == {'CFBundleDisplayName': 'Hereby', 'CFBundleName': 'Hereby'}
+
+
+def install(box, new_app, *flags):
+    environment = {**os.environ, 'HOME': str(box / 'home'), 'LML_LAUNCHCTL': str(box / 'bin' / 'launchctl'),
+                   'LML_APP_DESTINATION': str(box / 'Apps' / 'LiveMeetingListener.app'), 'STUB_STATE': str(box / 'state')}
+    return subprocess.run(['bash', str(REPO / 'mac' / 'scripts' / 'install-app.sh'), *flags, str(new_app)],
+                          capture_output=True, text=True, env=environment)
+
+
+def downloaded(box, identifier=NEW_LABEL):
+    """A checked release the updater unpacked, as the install job hands it to install-app.sh."""
+    app = box / 'download' / 'LiveMeetingListener.app'
+    (app / 'Contents' / 'MacOS').mkdir(parents=True)
+    (app / 'Contents' / 'MacOS' / 'lml').write_text('#!/bin/sh\necho signed build\n')
+    (app / 'Contents' / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleIdentifier': identifier}))
+    return app
+
+
+def test_a_downloaded_release_is_swapped_in_and_the_recorder_restarted(box):
+    lml(box)
+    load(box, NEW_LABEL)
+    installed_id(box, NEW_LABEL)
+    result = install(box, downloaded(box))
+    assert result.returncode == 0, result.stderr
+    assert 'signed build' in installed(box)
+    assert not (box / 'download' / 'LiveMeetingListener.app').exists()
+    assert [line.endswith(NEW_LABEL) for line in verbs(box, 'bootout')] == [True]
+    assert calls(box).index(verbs(box, 'bootout')[0]) < calls(box).index(verbs(box, 'bootstrap')[0])
+    assert not list((box / 'Apps').glob('.lml-build.*'))
+
+
+def test_a_downloaded_release_waits_for_the_call_to_end(box):
+    lml(box, status='sid active 00:01:00')
+    load(box, NEW_LABEL)
+    result = install(box, downloaded(box))
+    assert result.returncode == 3 and 'Not installing' in result.stderr
+    assert 'old build' in installed(box) and not verbs(box, 'bootout')
+    assert (box / 'download' / 'LiveMeetingListener.app').exists()
+
+
+def test_a_downloaded_release_with_another_bundle_id_refuses(box):
+    lml(box)
+    load(box, NEW_LABEL)
+    installed_id(box, NEW_LABEL)
+    result = install(box, downloaded(box, identifier='com.example.other'))
+    assert result.returncode == 1 and '--new-bundle-id' in result.stderr
+    assert 'old build' in installed(box) and not verbs(box, 'bootout')
+
+
+def test_check_only_installs_nothing(box):
+    lml(box)
+    load(box, NEW_LABEL)
+    result = install(box, box / 'pkg' / 'mac' / 'Info.plist', '--check-only')
+    assert result.returncode == 0, result.stderr
+    assert 'old build' in installed(box) and not verbs(box, 'bootout')
+
+
+def test_install_needs_an_app(box):
+    assert install(box, box / 'nowhere.app').returncode == 1

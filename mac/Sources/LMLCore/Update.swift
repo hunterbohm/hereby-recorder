@@ -182,6 +182,64 @@ public enum UpdateCommands {
     }
 }
 
+/// The one-shot launchd job that installs an update, shared by both updaters. Its plist, log and status file live in
+/// `folder`; the job writes its exit code to the status file for the panel.
+struct UpdateJob: Sendable {
+    let folder: URL
+    let runner: any ProcessRunner
+    let uid: uid_t
+
+    var log: URL { folder.appendingPathComponent("update.log") }
+    var status: URL { folder.appendingPathComponent("status") }
+    var plist: URL { folder.appendingPathComponent("\(UpdateCommands.label).plist") }
+
+    func isRunning() async throws -> Bool {
+        let state = try await runner.run(UpdateCommands.jobState(uid: uid))
+        return state.status == 0 && UpdateCommands.isRunning(String(decoding: state.stdout, as: UTF8.self))
+    }
+
+    /// Makes the folder and clears the last run's status and log.
+    func prepare() throws {
+        try PrivateFiles.directory(folder)
+        try? FileManager.default.removeItem(at: status)
+        try? FileManager.default.removeItem(at: log)
+    }
+
+    func note(_ line: String) {
+        let previous = FileManager.default.contents(atPath: log.path) ?? Data()
+        try? PrivateFiles.write(previous + Data((line.hasSuffix("\n") ? line : line + "\n").utf8), to: log)
+    }
+
+    /// Writes the job's plist and loads it. `job` is the plist's XML.
+    func launch(_ job: Data) async throws {
+        try PrivateFiles.write(job, to: plist)
+        // A finished job stays loaded until it is booted out; booting out one that is not loaded fails harmlessly.
+        _ = try? await runner.run(UpdateCommands.bootout(uid: uid))
+        var started = try await runner.run(UpdateCommands.bootstrap(uid: uid, plist: plist))
+        if started.status != 0 {
+            // launchd can still be tearing down the old job just after bootout.
+            try await Task.sleep(for: .seconds(1))
+            started = try await runner.run(UpdateCommands.bootstrap(uid: uid, plist: plist))
+        }
+        guard started.status == 0 else {
+            note("Couldn't start the update: launchctl bootstrap exited \(started.status).")
+            throw UpdateFailure(status: started.status)
+        }
+    }
+
+    /// The job's exit code once it wrote one; a job that stopped without writing one failed.
+    func progress() async -> UpdateProgress {
+        if let finished = readStatus() { return finished }
+        if (try? await isRunning()) == true { return .running }
+        return readStatus() ?? .failed
+    }
+
+    private func readStatus() -> UpdateProgress? {
+        guard let data = FileManager.default.contents(atPath: status.path) else { return nil }
+        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "0" ? .succeeded : .failed
+    }
+}
+
 /// Finds newer releases on the clone's remote and runs the update job. Its files live in `<state root>/update`.
 public actor Updater: UpdateActions {
     public static let checkInterval: TimeInterval = 24 * 60 * 60
@@ -191,19 +249,17 @@ public actor Updater: UpdateActions {
     private let checkout: UpdateCheckout
     private let folder: URL
     private let runner: any ProcessRunner
-    private let uid: uid_t
+    private let job: UpdateJob
 
     public init(checkout: UpdateCheckout, root: URL, runner: any ProcessRunner = LocalProcessRunner(), uid: uid_t = getuid()) {
         self.checkout = checkout
         self.runner = runner
-        self.uid = uid
         folder = root.appendingPathComponent("update")
-        logPath = folder.appendingPathComponent("update.log").path
+        job = UpdateJob(folder: folder, runner: runner, uid: uid)
+        logPath = job.log.path
     }
 
     private var checkURL: URL { folder.appendingPathComponent("check.json") }
-    private var statusURL: URL { folder.appendingPathComponent("status") }
-    private var jobURL: URL { folder.appendingPathComponent("\(UpdateCommands.label).plist") }
     private var cloneExists: Bool { FileManager.default.fileExists(atPath: checkout.path.appendingPathComponent(".git").path) }
 
     /// Asks the remote at most once a day, across restarts; between asks the last answer stands. A failed ask counts,
@@ -230,41 +286,13 @@ public actor Updater: UpdateActions {
         if let refusal = UpdateRules.refusal(inCall: false, changes: String(decoding: changes.stdout, as: UTF8.self), onTag: onTag) {
             throw refusal
         }
-        let state = try await runner.run(UpdateCommands.jobState(uid: uid))
-        if state.status == 0, UpdateCommands.isRunning(String(decoding: state.stdout, as: UTF8.self)) { throw UpdateRefusal.running }
-
-        try PrivateFiles.directory(folder)
-        try? FileManager.default.removeItem(at: statusURL)
-        try? FileManager.default.removeItem(atPath: logPath)
-        let job = UpdateCommands.job(checkout: checkout.path, version: version, log: URL(fileURLWithPath: logPath), status: statusURL)
-        try PrivateFiles.write(try PropertyListSerialization.data(fromPropertyList: job, format: .xml, options: 0), to: jobURL)
-        // A finished job stays loaded until it is booted out; booting out one that is not loaded fails harmlessly.
-        _ = try? await runner.run(UpdateCommands.bootout(uid: uid))
-        var started = try await runner.run(UpdateCommands.bootstrap(uid: uid, plist: jobURL))
-        if started.status != 0 {
-            // launchd can still be tearing down the old job just after bootout.
-            try await Task.sleep(for: .seconds(1))
-            started = try await runner.run(UpdateCommands.bootstrap(uid: uid, plist: jobURL))
-        }
-        guard started.status == 0 else {
-            try? PrivateFiles.write(Data("Couldn't start the update: launchctl bootstrap exited \(started.status).\n".utf8),
-                                    to: URL(fileURLWithPath: logPath))
-            throw UpdateFailure(status: started.status)
-        }
+        if try await job.isRunning() { throw UpdateRefusal.running }
+        try job.prepare()
+        let plist = UpdateCommands.job(checkout: checkout.path, version: version, log: job.log, status: job.status)
+        try await job.launch(try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0))
     }
 
-    /// The job's exit code once it wrote one; a job that stopped without writing one failed.
-    public func updateProgress() async -> UpdateProgress {
-        if let finished = readStatus() { return finished }
-        let state = try? await runner.run(UpdateCommands.jobState(uid: uid))
-        if let state, state.status == 0, UpdateCommands.isRunning(String(decoding: state.stdout, as: UTF8.self)) { return .running }
-        return readStatus() ?? .failed
-    }
-
-    private func readStatus() -> UpdateProgress? {
-        guard let data = FileManager.default.contents(atPath: statusURL.path) else { return nil }
-        return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == "0" ? .succeeded : .failed
-    }
+    public func updateProgress() async -> UpdateProgress { await job.progress() }
 }
 
 public struct UpdateFailure: Error, Equatable { public var status: Int32 }

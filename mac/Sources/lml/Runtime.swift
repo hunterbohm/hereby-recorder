@@ -307,7 +307,10 @@ struct MeetingPresence {
     private var lastEnded: (sid: String, kind: CaptureKind, at: Date)?
     private var lastForgotten: String?
     private var permissionsCheckedAt: Date?
-    private var permissions: (mic: Bool, audio: Bool?) = (true, nil)
+    private var access = AccessState()
+    /// Until then permissions are reread every second: the user just asked for one, and may be in System Settings.
+    private var accessWatchUntil: Date?
+    static let accessWatch: TimeInterval = 5 * 60
     private var labeling: [String: (task: Task<Void, Never>, writer: SessionWriter)] = [:]
     private let idleSleep = IdleSleepGuard()
     private var sleepWatcher: SleepWatcher?
@@ -320,7 +323,15 @@ struct MeetingPresence {
         detector = Detector(ownPID: getpid(), clients: MeetingClients(prefixes: settings.meetingApps, micPrefixes: settings.micApps))
         pause = PauseStore(root: paths.root)
     }
-    var actions: ControlActions { ControlActions(paths: paths, helpers: helpers, screenContext: settings.screenContext) }
+    var actions: ControlActions {
+        ControlActions(paths: paths, helpers: helpers, screenContext: settings.screenContext,
+                       access: { [weak self] permission in await self?.requestAccess(permission) })
+    }
+    private func requestAccess(_ permission: Permission) async {
+        accessWatchUntil = Date().addingTimeInterval(Self.accessWatch)
+        await CapturePermissions.ask(permission, backend: config.system_audio)
+        permissionsCheckedAt = nil
+    }
     private static var executable: URL { Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0]) }
     /// What a finished meeting runs when it stays on this Mac. Nil, with a note, when the setting is unreadable or no handoff script is installed.
     private static func doneCommand(_ settings: Settings) -> DoneCommand? {
@@ -458,8 +469,11 @@ struct MeetingPresence {
         FileHandle.standardOutput.write(Data("handoff sid=\(handoff.sid) \(handoff.output)\n".utf8))
     }
     private func publish(at now: Date) async {
-        if permissionsCheckedAt.map({ now.timeIntervalSince($0) >= 60 }) ?? true {
-            permissions = (CapturePermissions.microphone, CapturePermissions.systemAudio(config.system_audio))
+        // Every second while a call can't be recorded or the user is granting one, so the setup turns done the moment a
+        // grant lands; otherwise once a minute, which still catches a permission turned off.
+        let watching = !access.ready || accessWatchUntil.map { now < $0 } == true
+        if permissionsCheckedAt.map({ now.timeIntervalSince($0) >= (watching ? 1 : 60) }) ?? true {
+            access = CapturePermissions.state(config.system_audio, screenContext: settings.screenContext)
             permissionsCheckedAt = now
         }
         var next = RecorderSnapshot()
@@ -479,8 +493,9 @@ struct MeetingPresence {
             next.phase = .ended; next.sid = lastEnded.sid; next.kind = lastEnded.kind
         }
         next.forgottenSid = lastForgotten
-        next.micOK = permissions.mic && live?.micSilent != true && live?.micDown != true
-        next.audioOK = (permissions.audio ?? true) && !(live?.kind == .call && live?.systemAudioSilent == true)
+        next.access = access
+        next.micOK = access.microphone == .granted && live?.micSilent != true && live?.micDown != true
+        next.audioOK = access.systemAudio == .granted && !(live?.kind == .call && live?.systemAudioSilent == true)
         store.update { current in
             let feed = current.feed
             next.feed = feed; next.feedReceivedAt = current.feedReceivedAt

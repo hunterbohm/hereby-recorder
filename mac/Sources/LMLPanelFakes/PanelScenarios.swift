@@ -343,6 +343,38 @@ public enum PanelScenarios {
                   now: beforeNow)
         await add("before-audio-off", RecorderSnapshot(audioOK: false, feed: FeedBuilder.feed(at: beforeNow, next: upNext)), now: beforeNow)
         await add("access-mic", RecorderSnapshot(micOK: false, feed: FeedBuilder.feed(at: accessNow)), now: accessNow)
+        var neverAsked = RecorderSnapshot(audioOK: false, feed: FeedBuilder.feed(at: accessNow, next: upNext))
+        neverAsked.access.systemAudio = .notAsked
+        await add("access-not-asked", neverAsked, now: accessNow)
+        return list
+    }
+
+    /// The setup window's states, from first run to done.
+    public static func setups() async -> [PanelScenario] {
+        var list: [PanelScenario] = []
+        let now = time("09:00")
+        func add(_ name: String, _ access: AccessState, phase: RecorderPhase = .idle,
+                 _ prepare: (FakeRecorder, PanelStore) async -> Void = { _, _ in }) async {
+            var snapshot = RecorderSnapshot(phase: phase, micOK: access.microphone == .granted, audioOK: access.systemAudio == .granted,
+                                            feed: FeedBuilder.feed(at: now))
+            snapshot.access = access
+            let (fake, store) = makeStore(snapshot, now: now)
+            await prepare(fake, store)
+            list.append(PanelScenario(name: name, recorder: fake, store: store))
+        }
+        await add("setup-first-run", AccessState(microphone: .notAsked, systemAudio: .notAsked, screen: .notAsked))
+        await add("setup-asking", AccessState(microphone: .notAsked, systemAudio: .notAsked, screen: .notAsked)) { fake, store in
+            fake.hold()
+            Task { await store.fixAccess(.microphone) }
+            while fake.calls.isEmpty { await Task.yield() }
+        }
+        await add("setup-mic-on", AccessState(microphone: .granted, systemAudio: .notAsked, screen: .notAsked))
+        await add("setup-denied", AccessState(microphone: .denied, systemAudio: .granted, screen: .notAsked))
+        await add("setup-audio-denied", AccessState(microphone: .granted, systemAudio: .denied, screen: .notAsked))
+        await add("setup-ready", AccessState(microphone: .granted, systemAudio: .granted, screen: .notAsked))
+        await add("setup-restart", AccessState(microphone: .granted, systemAudio: .granted, screen: .restart))
+        await add("setup-restart-in-call", AccessState(microphone: .granted, systemAudio: .granted, screen: .restart), phase: .recording)
+        await add("setup-done", AccessState(microphone: .granted, systemAudio: .granted, screen: .granted))
         return list
     }
 

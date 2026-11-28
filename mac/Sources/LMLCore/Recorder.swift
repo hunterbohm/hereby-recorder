@@ -55,11 +55,19 @@ public struct ControlActions: RecorderActions {
     private let runner: any ProcessRunner
     private let screenContext: Bool
     private let grab: @Sendable (_ ask: Bool) async -> String?
-    /// `screenContext` sends the screen with every live question; Read screen always sends it.
+    private let access: @Sendable (Permission) async -> Void
+    private let relaunch: @Sendable () -> Void
+    /// `screenContext` sends the screen with every live question; Read screen always sends it. `access` and `relaunch`
+    /// run in the recorder's own process (see `requestAccess` and `restart`).
     public init(paths: SessionPaths, helpers: MeetingHelpers?, runner: any ProcessRunner = LocalProcessRunner(), screenContext: Bool = false,
-                grab: @escaping @Sendable (_ ask: Bool) async -> String? = { await ScreenGrab.jpegBase64(ask: $0) }) {
+                grab: @escaping @Sendable (_ ask: Bool) async -> String? = { await ScreenGrab.jpegBase64(ask: $0) },
+                access: @escaping @Sendable (Permission) async -> Void = { _ in },
+                relaunch: @escaping @Sendable () -> Void = { kill(getpid(), SIGTERM) }) {
         self.paths = paths; self.helpers = helpers; self.runner = runner; self.screenContext = screenContext; self.grab = grab
+        self.access = access; self.relaunch = relaunch
     }
+    public func requestAccess(_ permission: Permission) async { await access(permission) }
+    public func restart() async throws { relaunch() }
     private func send(_ command: ControlCommand, expect: String) async throws {
         let reply = try await ControlClient.request(command, root: paths.root)
         guard reply == expect else { throw RecorderError(reply: reply) }

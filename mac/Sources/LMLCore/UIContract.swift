@@ -204,6 +204,46 @@ public struct PanelFeed: Codable, Sendable, Equatable {
     }
 }
 
+/// A macOS privacy permission the recorder uses.
+public enum Permission: String, Sendable, CaseIterable {
+    case microphone, systemAudio, screen
+}
+
+/// Where one permission stands for this run of the app.
+public enum Grant: String, Sendable {
+    case granted
+    /// Never asked: System Settings doesn't list the app until it asks once.
+    case notAsked
+    case denied
+    /// Allowed in System Settings, but this run can't use it until the app restarts (Screen Recording).
+    case restart
+}
+
+/// The recorder's permissions, read without prompting.
+public struct AccessState: Equatable, Sendable {
+    public var microphone: Grant
+    public var systemAudio: Grant
+    /// Nil when nothing needs Screen Recording: `screen_context` is off, or system audio comes through ScreenCaptureKit,
+    /// whose grant is `systemAudio`'s.
+    public var screen: Grant?
+    /// System audio comes through ScreenCaptureKit, so its switch is the Screen Recording one, not a process tap's.
+    public var audioFromScreen: Bool
+    public init(microphone: Grant = .granted, systemAudio: Grant = .granted, screen: Grant? = nil, audioFromScreen: Bool = false) {
+        self.microphone = microphone; self.systemAudio = systemAudio; self.screen = screen; self.audioFromScreen = audioFromScreen
+    }
+    /// The two a call can't be recorded without.
+    public var ready: Bool { microphone == .granted && systemAudio == .granted }
+    /// Every permission the setup shows, the optional screen included.
+    public var complete: Bool { ready && (screen ?? .granted) == .granted }
+    public subscript(_ permission: Permission) -> Grant? {
+        switch permission {
+        case .microphone: microphone
+        case .systemAudio: systemAudio
+        case .screen: screen
+        }
+    }
+}
+
 public struct RecorderSnapshot: Sendable, Equatable {
     public var phase: RecorderPhase
     public var sid: String?
@@ -227,6 +267,8 @@ public struct RecorderSnapshot: Sendable, Equatable {
     public var forgottenSid: String?
     /// Set while the ended call `sid` is held in case it comes back: when it files if it does not.
     public var heldUntil: Date?
+    /// Each permission's own state; `micOK` and `audioOK` also go false when a granted source goes silent.
+    public var access = AccessState()
     public init(phase: RecorderPhase = .idle, sid: String? = nil, kind: CaptureKind = .call,
                 title: String? = nil, eventStart: Date? = nil, startedAt: Date? = nil,
                 lines: [TranscriptLine] = [], marks: Int = 0, markTimes: [Date] = [], micOK: Bool = true,
@@ -277,6 +319,12 @@ public protocol RecorderActions: Sendable {
     func hermesOptIn(key: String) async throws
     func hermesOptOut(key: String) async throws
     func hermesChat(key: String, on: Bool) async throws
+    /// Asks macOS for `permission` from the recorder's own process, so System Settings lists this app and not a
+    /// terminal. Returns once the prompt is answered. Already asked, it shows nothing; either way the recorder rereads
+    /// its permissions every second for a few minutes, so a switch flipped in System Settings shows at once.
+    func requestAccess(_ permission: Permission) async
+    /// Quits the recorder so launchd starts it again: a Screen Recording grant made while it runs reaches it only then.
+    func restart() async throws
 }
 
 /// Live recorder state for the panel. `observe` delivers the current snapshot, then every change.

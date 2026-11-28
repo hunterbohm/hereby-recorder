@@ -16,8 +16,12 @@ struct PanelSnapshots {
             await Measure.run()
             return
         }
+        if arguments.count == 2, arguments[0] == "--setup" {
+            await SetupShots.run(into: URL(fileURLWithPath: arguments[1], isDirectory: true))
+            return
+        }
         guard arguments.count == 1 else {
-            FileHandle.standardError.write(Data("usage: lml-panel-snapshots <dir> | --measure\n".utf8))
+            FileHandle.standardError.write(Data("usage: lml-panel-snapshots <dir> | --measure | --setup <dir>\n".utf8))
             exit(2)
         }
         let directory = URL(fileURLWithPath: arguments[0], isDirectory: true)
@@ -30,6 +34,15 @@ struct PanelSnapshots {
                 let size = render(PanelView(store: scenario.store), dark: dark, to: directory.appendingPathComponent(name + ".png"))
                 print("\(name).png \(Int(size.width))x\(Int(size.height))")
                 if size.width != PanelRules.width || size.height > maxHeight { oversized.append(name) }
+            }
+            scenario.recorder.release()
+        }
+        for scenario in await PanelScenarios.setups() {
+            for dark in [false, true] {
+                let name = "\(scenario.name)-\(dark ? "dark" : "light")"
+                let size = render(SetupView(store: scenario.store), dark: dark, to: directory.appendingPathComponent(name + ".png"))
+                print("\(name).png \(Int(size.width))x\(Int(size.height))")
+                if size.height > maxHeight { oversized.append(name) }
             }
             scenario.recorder.release()
         }

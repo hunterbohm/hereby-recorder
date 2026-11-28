@@ -18,6 +18,7 @@ let package = Package(
         .target(name: "LMLPanelFakes", dependencies: ["LMLCore", "LMLPanel"]),
         .executableTarget(name: "lml", dependencies: ["LMLCore", "LMLPanel", .product(name: "FluidAudio", package: "FluidAudio")]),
         .executableTarget(name: "lml-mic", dependencies: ["LMLCore"]),
+        .executableTarget(name: "lml-release", dependencies: ["LMLCore"]),
         .executableTarget(name: "lml-panel-snapshots", dependencies: ["LMLCore", "LMLPanel", "LMLPanelFakes"]),
         .testTarget(name: "LMLCoreTests", dependencies: ["LMLCore"], resources: [.copy("Fixtures")]),
         .testTarget(name: "LMLRuntimeTests", dependencies: ["lml"]),
