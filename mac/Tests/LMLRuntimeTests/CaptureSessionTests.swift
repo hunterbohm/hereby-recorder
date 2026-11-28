@@ -223,3 +223,15 @@ struct SuppressionTests {
         #expect(Suppression.untilMeetingEnds.lifts(at: now, meetingSignal: false))
     }
 }
+
+@MainActor struct AccessWatchTests {
+    @Test func rereadsEverySecondWhileTheSetupWindowIsOpenEvenAfterTheFiveMinutes() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let expired = now.addingTimeInterval(-1)
+        #expect(!Listener.watchesAccess(ready: true, until: expired, setupOpen: false, at: now), "closed and quiet: once a minute")
+        #expect(!Listener.watchesAccess(ready: true, until: nil, setupOpen: false, at: now))
+        #expect(Listener.watchesAccess(ready: true, until: expired, setupOpen: true, at: now), "open: still fast after the five minutes")
+        #expect(Listener.watchesAccess(ready: true, until: now.addingTimeInterval(60), setupOpen: false, at: now), "just clicked Allow")
+        #expect(Listener.watchesAccess(ready: false, until: nil, setupOpen: false, at: now), "a call can't be recorded")
+    }
+}

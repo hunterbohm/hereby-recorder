@@ -23,6 +23,7 @@ public final class FakeRecorder: RecorderModel, RecorderActions {
         var snapshot: RecorderSnapshot
         var handlers: [@Sendable (RecorderSnapshot) -> Void] = []
         var calls: [Call] = []
+        var setupWindows: [Bool] = []
         var failing = false
         var answer = "Dana said the Poland decision waits on the SOP library audit."
         var anyAnswer = "Last call with Dana covered the SOP library and Poland. You owe him 2 tasks."
@@ -42,6 +43,9 @@ public final class FakeRecorder: RecorderModel, RecorderActions {
 
     public var snapshot: RecorderSnapshot { state.withLock { $0.snapshot } }
     public var calls: [Call] { state.withLock { $0.calls } }
+    /// Each open (true) or close (false) of the setup window the panel reported. Kept apart from `calls`: the window
+    /// opens at launch, and tests wait for the first call.
+    public var setupWindows: [Bool] { state.withLock { $0.setupWindows } }
 
     public func observe(_ handler: @escaping @Sendable (RecorderSnapshot) -> Void) {
         let current = state.withLock { state in
@@ -118,6 +122,7 @@ public final class FakeRecorder: RecorderModel, RecorderActions {
     public func hermesOptOut(key: String) async throws { try await enter(.hermesOptOut(key)) }
     public func hermesChat(key: String, on: Bool) async throws { try await enter(.hermesChat(key, on)) }
     public func requestAccess(_ permission: Permission) async { try? await enter(.requestAccess(permission)) }
+    public func setupWindow(open: Bool) { state.withLock { $0.setupWindows.append(open) } }
     public func restart() async throws { try await enter(.restart) }
 
     private func enter(_ call: Call, record: Bool = true) async throws {

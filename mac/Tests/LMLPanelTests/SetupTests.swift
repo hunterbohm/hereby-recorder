@@ -160,6 +160,16 @@ struct SetupStoreTests {
         #expect(h.recorder.calls == [.requestAccess(.microphone)])
     }
 
+    @Test func theRecorderHearsWhenTheSetupWindowOpensAndCloses() {
+        let h = Harness(withAccess(allOn), now: at("09:00"))
+        #expect(h.recorder.setupWindows.isEmpty)
+        h.store.showSetup()
+        h.store.showSetup()
+        h.store.dismissSetup()
+        h.store.dismissSetup()
+        #expect(h.recorder.setupWindows == [true, false], "once per change, so a closed window costs nothing")
+    }
+
     @Test func restartWaitsForTheCall() async {
         let inCall = Harness(withAccess(AccessState(screen: .restart), phase: .recording), now: at("09:00"))
         #expect(!inCall.store.canRestart)

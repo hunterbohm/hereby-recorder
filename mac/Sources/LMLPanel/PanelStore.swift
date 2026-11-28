@@ -151,7 +151,7 @@ public final class PanelStore {
             wantSetup()
         } else if setupPending, !inCall {
             setupPending = false
-            if !next.access.ready { setupShown = true }
+            if !next.access.ready { showSetup() }
         }
         if previous.access.microphone != next.access.microphone { asking.remove(.microphone) }
         if previous.access.systemAudio != next.access.systemAudio { asking.remove(.systemAudio) }
@@ -403,15 +403,22 @@ public final class PanelStore {
 
     // MARK: Setup
 
-    public func showSetup() { setupShown = true }
+    public func showSetup() { setSetup(shown: true) }
 
     public func dismissSetup() {
-        setupShown = false
+        setSetup(shown: false)
         setupPending = false
     }
 
     private func wantSetup() {
-        if inCall { setupPending = true } else { setupShown = true }
+        if inCall { setupPending = true } else { showSetup() }
+    }
+
+    /// The recorder rereads permissions every second while the window is up, so it hears of every open and close.
+    private func setSetup(shown: Bool) {
+        guard setupShown != shown else { return }
+        setupShown = shown
+        actions.setupWindow(open: shown)
     }
 
     /// The one action a setup row offers: ask macOS when it never asked (the app is listed in System Settings from

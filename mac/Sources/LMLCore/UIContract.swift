@@ -323,6 +323,9 @@ public protocol RecorderActions: Sendable {
     /// terminal. Returns once the prompt is answered. Already asked, it shows nothing; either way the recorder rereads
     /// its permissions every second for a few minutes, so a switch flipped in System Settings shows at once.
     func requestAccess(_ permission: Permission) async
+    /// The setup window opened or closed. While it is open the recorder rereads its permissions every second, however
+    /// long the user takes in System Settings.
+    func setupWindow(open: Bool)
     /// Quits the recorder so launchd starts it again: a Screen Recording grant made while it runs reaches it only then.
     func restart() async throws
 }

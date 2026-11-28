@@ -3,6 +3,7 @@ import Foundation
 import LMLCore
 import Darwin
 import os
+import Synchronization
 
 struct RunOptions {
     var test = false
@@ -311,6 +312,8 @@ struct MeetingPresence {
     /// Until then permissions are reread every second: the user just asked for one, and may be in System Settings.
     private var accessWatchUntil: Date?
     static let accessWatch: TimeInterval = 5 * 60
+    /// The setup window is open: the panel says so, and permissions are reread every second until it closes.
+    nonisolated private let setupOpen = Mutex(false)
     private var labeling: [String: (task: Task<Void, Never>, writer: SessionWriter)] = [:]
     private let idleSleep = IdleSleepGuard()
     private var sleepWatcher: SleepWatcher?
@@ -325,7 +328,8 @@ struct MeetingPresence {
     }
     var actions: ControlActions {
         ControlActions(paths: paths, helpers: helpers, screenContext: settings.screenContext,
-                       access: { [weak self] permission in await self?.requestAccess(permission) })
+                       access: { [weak self] permission in await self?.requestAccess(permission) },
+                       setup: { [weak self] open in self?.setupOpen.withLock { $0 = open } })
     }
     private func requestAccess(_ permission: Permission) async {
         accessWatchUntil = Date().addingTimeInterval(Self.accessWatch)
@@ -468,10 +472,14 @@ struct MeetingPresence {
     nonisolated private static func announce(_ handoff: Handoff) {
         FileHandle.standardOutput.write(Data("handoff sid=\(handoff.sid) \(handoff.output)\n".utf8))
     }
+    /// Every second while a call can't be recorded, the user just asked for a permission, or the setup window is open.
+    static func watchesAccess(ready: Bool, until: Date?, setupOpen: Bool, at now: Date) -> Bool {
+        !ready || setupOpen || until.map { now < $0 } == true
+    }
     private func publish(at now: Date) async {
         // Every second while a call can't be recorded or the user is granting one, so the setup turns done the moment a
         // grant lands; otherwise once a minute, which still catches a permission turned off.
-        let watching = !access.ready || accessWatchUntil.map { now < $0 } == true
+        let watching = Self.watchesAccess(ready: access.ready, until: accessWatchUntil, setupOpen: setupOpen.withLock { $0 }, at: now)
         if permissionsCheckedAt.map({ now.timeIntervalSince($0) >= (watching ? 1 : 60) }) ?? true {
             access = CapturePermissions.state(config.system_audio, screenContext: settings.screenContext)
             permissionsCheckedAt = now
